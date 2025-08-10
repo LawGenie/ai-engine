@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# uv environment and config
+.venv/
+.uv/
+uv.toml
+
+# VSCode
+.vscode/
