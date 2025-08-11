@@ -1,11 +1,95 @@
-# Python
+# ================================
+# 🐍 Python Bytecode / Cache
+# ================================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
-# uv environment and config
+# ================================
+# 🧪 Virtual Environments
+# ================================
 .venv/
+venv/
+ENV/
+env/
 .uv/
+.conda/
+env.bak/
+venv.bak/
+.venv.bak/
+.uv.bak/
 uv.toml
 
-# VSCode
+# ================================
+# 🧠 IDE / Editor Settings
+# ================================
+# VS Code
 .vscode/
+
+# PyCharm
+.idea/
+*.iml
+
+# ================================
+# 🗂️ System Files (macOS / Windows)
+# ================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ================================
+# 📜 Logs and Outputs
+# ================================
+*.log
+*.out
+*.pid
+
+# ================================
+# 📦 Packaging
+# ================================
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+
+# ================================
+# 🔬 Test & Coverage
+# ================================
+.coverage
+coverage.xml
+*.cover
+*.py,cover
+htmlcov/
+.tox/
+.nox/
+.cache/
+pytest_cache/
+
+# ================================
+# 🔧 Configuration / Metadata
+# ================================
+*.ini
+*.cfg
+*.toml
+*.db
+*.sqlite3
+
+# ================================
+# 🔒 Secrets & Env
+# ================================
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# ================================
+# ✨ Misc
+# ================================
+*.swp
+*.swo
+*.bak
+*.tmp
