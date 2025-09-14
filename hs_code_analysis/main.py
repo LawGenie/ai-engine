@@ -38,6 +38,9 @@ class HsCodeAnalysisResponse(BaseModel):
     suggestions: list[HsCodeSuggestion]
     analysisSessionId: str
     timestamp: str
+    startTime: str
+    endTime: str
+    processingTimeMs: float
     isValid: bool
 
 @app.get("/")
