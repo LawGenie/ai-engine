@@ -13,18 +13,18 @@ async def test_hs_code_analysis():
     test_cases = [
         {
             "product_name": "Premium Vitamin C Serum",
-            "product_description": "High-concentration Vitamin C serum effective for skin tone improvement and anti-aging. Contains 20% Vitamin C and hyaluronic acid, suitable for all skin types.",
+            "product_description": "High-concentration Vitamin C serum effective for skin tone improvement and anti-aging. Contains 20% Vitamin C and hyaluronic acid, suitable for all skin types. Volume: 30ml, glass bottle packaging, net weight: 50g. Use after toner in morning and evening skincare routine.",
             "origin_country": "KOR"
         },
         {
-            "product_name": "Korean Rice Snack",
-            "product_description": "Traditional Korean rice snacks made with organic brown rice and seasoned with natural ingredients. Crispy texture with savory taste.",
+            "product_name": "Premium Red Ginseng Extract",
+            "product_description": "6-year aged Korean red ginseng concentrated extract with 80mg ginsenosides per serving. Boosts energy and immunity, supports overall health. Sugar-free formula suitable for adults. Volume: 240ml (30ml x 8 pouches), individual foil packaging, net weight: 300g. Take 1 pouch daily on empty stomach.",
             "origin_country": "KOR"
         },
         {
-            "product_name": "Smartphone Case",
-            "product_description": "Protective case for iPhone 15 Pro made of silicone material with shock absorption features.",
-            "origin_country": "CHN"
+            "product_name": "Instant Cooked Rice Multipack",
+            "product_description": "Premium Korean short-grain rice, pre-cooked and packaged for convenience. Microwave-ready in 2 minutes, maintains fresh texture and taste. No preservatives added. Volume: 210g x 12 packs, vacuum-sealed packaging, total weight: 2.8kg. Heat in microwave for 2 minutes or steam for 3 minutes.",
+            "origin_country": "KOR"
         }
     ]
     
@@ -55,7 +55,9 @@ async def test_hs_code_analysis():
                     result = response.json()
                     print(f"✅ 분석 성공!")
                     print(f"📋 세션 ID: {result['analysisSessionId']}")
-                    print(f"⏰ 타임스탬프: {result['timestamp']}")
+                    print(f"⏰ 시작시간: {result.get('startTime', 'N/A')}")
+                    print(f"⏰ 완료시간: {result.get('endTime', 'N/A')}")
+                    print(f"⏱️  소요시간: {result.get('processingTimeMs', 'N/A')}ms")
                     print(f"✅ 유효성: {result['isValid']}")
                     
                     print(f"\n📊 추천 HS 코드:")
