@@ -6,6 +6,7 @@ LangGraph Tools for Requirements Analysis
 from typing import Dict, Any, List
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
+from app.services.requirements.data_gov_api import DataGovAPIService
 
 
 class RequirementsTools:
@@ -14,98 +15,121 @@ class RequirementsTools:
     def __init__(self):
         self.search_service = TavilySearchService()
         self.web_scraper = WebScraper()
+        self.data_gov_api = DataGovAPIService()
+        
+        # 기관별 도메인 매핑
+        self.agency_domains = {
+            "FDA": "fda.gov",
+            "FCC": "fcc.gov", 
+            "CBP": "cbp.gov",
+            "USDA": "usda.gov",
+            "EPA": "epa.gov",
+            "CPSC": "cpsc.gov",
+            "KCS": "customs.go.kr",  # 한국 관세청
+            "MFDS": "mfds.go.kr",    # 식품의약품안전처
+            "MOTIE": "motie.go.kr"   # 산업통상자원부
+        }
+    
+    async def search_agency_documents(self, agency: str, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """기관별 문서 검색 도구 (통합)"""
+        print(f"🔧 [TOOL] {agency} 문서 검색: {query}")
+        
+        results = await self.search_service.search(query, max_results)
+        
+        # 기관별 도메인 필터링
+        agency_domain = self.agency_domains.get(agency, "")
+        agency_results = []
+        
+        for result in results:
+            url = result.get("url", "")
+            if agency_domain in url:
+                agency_results.append(result)
+                print(f"  ✅ {agency} 공식 문서 발견: {result.get('title', 'No title')}")
+            else:
+                print(f"  ❌ {agency} 외부 문서 제외: {result.get('title', 'No title')}")
+        
+        return {
+            "agency": agency,
+            "query": query,
+            "total_results": len(results),
+            "agency_results": agency_results,
+            "selected_url": agency_results[0]["url"] if agency_results else None,
+            "domain": agency_domain
+        }
     
     async def search_fda_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
-        """FDA 관련 문서 검색 도구"""
-        print(f"🔧 [TOOL] FDA 문서 검색: {query}")
-        
-        results = await self.search_service.search(query, max_results)
-        
-        # FDA 공식 도메인 필터링
-        fda_results = []
-        for result in results:
-            url = result.get("url", "")
-            if "fda.gov" in url:
-                fda_results.append(result)
-                print(f"  ✅ FDA 공식 문서 발견: {result.get('title', 'No title')}")
-            else:
-                print(f"  ❌ FDA 외부 문서 제외: {result.get('title', 'No title')}")
-        
-        return {
-            "agency": "FDA",
-            "query": query,
-            "total_results": len(results),
-            "fda_results": fda_results,
-            "selected_url": fda_results[0]["url"] if fda_results else None
-        }
+        """FDA 관련 문서 검색 도구 (하위 호환성)"""
+        return await self.search_agency_documents("FDA", query, max_results)
     
+    # 미국 정부 기관들
     async def search_fcc_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """FCC 관련 문서 검색 도구"""
-        print(f"🔧 [TOOL] FCC 문서 검색: {query}")
-        
-        results = await self.search_service.search(query, max_results)
-        
-        # FCC 공식 도메인 필터링
-        fcc_results = []
-        for result in results:
-            url = result.get("url", "")
-            if "fcc.gov" in url:
-                fcc_results.append(result)
-                print(f"  ✅ FCC 공식 문서 발견: {result.get('title', 'No title')}")
-            else:
-                print(f"  ❌ FCC 외부 문서 제외: {result.get('title', 'No title')}")
-        
-        return {
-            "agency": "FCC",
-            "query": query,
-            "total_results": len(results),
-            "fcc_results": fcc_results,
-            "selected_url": fcc_results[0]["url"] if fcc_results else None
-        }
+        return await self.search_agency_documents("FCC", query, max_results)
     
     async def search_cbp_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """CBP 관련 문서 검색 도구"""
-        print(f"🔧 [TOOL] CBP 문서 검색: {query}")
-        
-        results = await self.search_service.search(query, max_results)
-        
-        # CBP 공식 도메인 필터링
-        cbp_results = []
-        for result in results:
-            url = result.get("url", "")
-            if "cbp.gov" in url:
-                cbp_results.append(result)
-                print(f"  ✅ CBP 공식 문서 발견: {result.get('title', 'No title')}")
-            else:
-                print(f"  ❌ CBP 외부 문서 제외: {result.get('title', 'No title')}")
-        
-        return {
-            "agency": "CBP",
-            "query": query,
-            "total_results": len(results),
-            "cbp_results": cbp_results,
-            "selected_url": cbp_results[0]["url"] if cbp_results else None
-        }
+        return await self.search_agency_documents("CBP", query, max_results)
+    
+    async def search_usda_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """USDA 관련 문서 검색 도구"""
+        return await self.search_agency_documents("USDA", query, max_results)
+    
+    async def search_epa_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """EPA 관련 문서 검색 도구"""
+        return await self.search_agency_documents("EPA", query, max_results)
+    
+    async def search_cpsc_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """CPSC 관련 문서 검색 도구"""
+        return await self.search_agency_documents("CPSC", query, max_results)
+    
+    # 한국 정부 기관들
+    async def search_kcs_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """한국 관세청 관련 문서 검색 도구"""
+        return await self.search_agency_documents("KCS", query, max_results)
+    
+    async def search_mfds_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """식품의약품안전처 관련 문서 검색 도구"""
+        return await self.search_agency_documents("MFDS", query, max_results)
+    
+    async def search_motie_documents(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        """산업통상자원부 관련 문서 검색 도구"""
+        return await self.search_agency_documents("MOTIE", query, max_results)
     
     async def scrape_document(self, agency: str, url: str, hs_code: str) -> Dict[str, Any]:
-        """특정 문서 스크래핑 도구"""
+        """특정 문서 스크래핑 도구 (확장)"""
         print(f"🔧 [TOOL] {agency} 문서 스크래핑")
         print(f"  URL: {url}")
         print(f"  HS코드: {hs_code}")
         
         try:
-            if agency == "FDA":
-                result = await self.web_scraper.scrape_fda_requirements(hs_code, url)
-            elif agency == "FCC":
-                result = await self.web_scraper.scrape_fcc_requirements(hs_code, url)
-            elif agency == "CBP":
-                result = await self.web_scraper.scrape_cbp_requirements(hs_code, url)
-            else:
+            # 기관별 스크래핑 메서드 매핑
+            scraper_methods = {
+                "FDA": "scrape_fda_requirements",
+                "FCC": "scrape_fcc_requirements", 
+                "CBP": "scrape_cbp_requirements",
+                "USDA": "scrape_usda_requirements",
+                "EPA": "scrape_epa_requirements",
+                "CPSC": "scrape_cpsc_requirements",
+                "KCS": "scrape_kcs_requirements",
+                "MFDS": "scrape_mfds_requirements",
+                "MOTIE": "scrape_motie_requirements"
+            }
+            
+            method_name = scraper_methods.get(agency)
+            if not method_name:
                 return {"error": f"Unknown agency: {agency}"}
+            
+            # 동적으로 스크래핑 메서드 호출
+            scraper_method = getattr(self.web_scraper, method_name, None)
+            if not scraper_method:
+                return {"error": f"Scraper method not implemented for {agency}"}
+            
+            result = await scraper_method(hs_code, url)
             
             # 스크래핑 결과 상세 로깅
             certs = result.get("certifications", [])
             docs = result.get("documents", [])
+            sources = result.get("sources", [])
             
             print(f"  ✅ {agency} 스크래핑 성공:")
             print(f"    📋 인증요건: {len(certs)}개")
@@ -118,6 +142,10 @@ class RequirementsTools:
                 print(f"      {i}. {doc.get('name', 'Unknown')}")
                 print(f"         설명: {doc.get('description', 'No description')}")
             
+            print(f"    📚 출처: {len(sources)}개")
+            for i, source in enumerate(sources, 1):
+                print(f"      {i}. {source.get('title', 'Unknown')} ({source.get('type', 'Unknown')})")
+            
             return result
             
         except Exception as e:
@@ -126,19 +154,22 @@ class RequirementsTools:
                 "agency": agency,
                 "error": str(e),
                 "certifications": [],
-                "documents": []
+                "documents": [],
+                "sources": []
             }
     
     async def analyze_requirements(self, requirements_data: Dict[str, Any]) -> Dict[str, Any]:
-        """요구사항 분석 도구"""
+        """요구사항 분석 도구 (확장)"""
         print(f"🔧 [TOOL] 요구사항 분석 시작")
         
         certifications = requirements_data.get("certifications", [])
         documents = requirements_data.get("documents", [])
+        sources = requirements_data.get("sources", [])
         
-        # 분석 통계
+        # 기본 분석 통계
         total_certs = len(certifications)
         total_docs = len(documents)
+        total_sources = len(sources)
         
         # 기관별 통계
         agency_stats = {}
@@ -146,25 +177,222 @@ class RequirementsTools:
             agency = cert.get("agency", "Unknown")
             agency_stats[agency] = agency_stats.get(agency, 0) + 1
         
-        print(f"  📊 분석 결과:")
-        print(f"    📋 총 인증요건: {total_certs}개")
-        print(f"    📄 총 필요서류: {total_docs}개")
-        print(f"    🏢 기관별 인증요건:")
-        for agency, count in agency_stats.items():
-            print(f"      • {agency}: {count}개")
-        
         # 우선순위 분석
         high_priority = [c for c in certifications if c.get("priority") == "high"]
         required_docs = [d for d in documents if d.get("required", False)]
         
+        # 품질 지표 계산
+        completeness_score = min(1.0, (total_certs + total_docs) / 10)  # 0-1 스케일
+        coverage_ratio = len(agency_stats) / len(self.agency_domains)  # 기관 커버리지
+        
+        # 복잡도 분석
+        complexity_factors = []
+        if total_certs > 5:
+            complexity_factors.append("다중 인증 요구")
+        if len(agency_stats) > 3:
+            complexity_factors.append("다기관 규제")
+        if any("critical" in str(cert).lower() for cert in certifications):
+            complexity_factors.append("중요 인증 요구")
+        
+        compliance_complexity = "simple" if len(complexity_factors) == 0 else "moderate" if len(complexity_factors) <= 2 else "complex"
+        
+        # 비용 추정 (간단한 휴리스틱)
+        estimated_cost_low = total_certs * 100 + total_docs * 50  # USD
+        estimated_cost_high = total_certs * 500 + total_docs * 200
+        
+        # 리스크 분석
+        risk_factors = []
+        if total_certs == 0:
+            risk_factors.append("인증 요구사항 불명확")
+        if len(required_docs) > 10:
+            risk_factors.append("서류 요구사항 과다")
+        if coverage_ratio < 0.3:
+            risk_factors.append("기관 커버리지 부족")
+        
+        overall_risk_level = "low" if len(risk_factors) == 0 else "medium" if len(risk_factors) <= 2 else "high"
+        
+        print(f"  📊 분석 결과:")
+        print(f"    📋 총 인증요건: {total_certs}개")
+        print(f"    📄 총 필요서류: {total_docs}개")
+        print(f"    📚 총 출처: {total_sources}개")
+        print(f"    🏢 기관별 인증요건:")
+        for agency, count in agency_stats.items():
+            print(f"      • {agency}: {count}개")
         print(f"    ⚠️ 고우선순위 인증요건: {len(high_priority)}개")
         print(f"    📋 필수 서류: {len(required_docs)}개")
+        print(f"    📈 완성도 점수: {completeness_score:.2f}")
+        print(f"    🎯 기관 커버리지: {coverage_ratio:.2f}")
+        print(f"    ⚡ 복잡도: {compliance_complexity}")
+        print(f"    💰 예상 비용: ${estimated_cost_low}-${estimated_cost_high}")
+        print(f"    ⚠️ 리스크 레벨: {overall_risk_level}")
         
         return {
+            # 기본 통계
             "total_certifications": total_certs,
             "total_documents": total_docs,
+            "total_sources": total_sources,
             "agency_stats": agency_stats,
             "high_priority_count": len(high_priority),
             "required_docs_count": len(required_docs),
+            
+            # 품질 지표
+            "quality_metrics": {
+                "completeness_score": completeness_score,
+                "coverage_ratio": coverage_ratio,
+                "compliance_complexity": compliance_complexity,
+                "complexity_factors": complexity_factors
+            },
+            
+            # 비용 분석
+            "cost_analysis": {
+                "estimated_cost_low": estimated_cost_low,
+                "estimated_cost_high": estimated_cost_high,
+                "currency": "USD"
+            },
+            
+            # 리스크 분석
+            "risk_analysis": {
+                "overall_risk_level": overall_risk_level,
+                "risk_factors": risk_factors
+            },
+            
             "analysis_complete": True
         }
+    
+    async def search_requirements_hybrid(self, hs_code: str, product_name: str) -> Dict[str, Any]:
+        """하이브리드 검색: Data.gov API + Tavily Search"""
+        print(f"\n🚀 [HYBRID] 하이브리드 검색 시작")
+        print(f"  📋 HS코드: {hs_code}")
+        print(f"  📦 상품명: {product_name}")
+        
+        results = {
+            "hs_code": hs_code,
+            "product_name": product_name,
+            "search_timestamp": None,
+            "api_results": {},
+            "web_results": {},
+            "combined_results": {},
+            "search_methods": []
+        }
+        
+        # 1. Data.gov API 검색 (HS코드 직접 검색)
+        try:
+            print(f"\n  🔍 1단계: Data.gov API 검색")
+            api_results = await self.data_gov_api.search_requirements_by_hs_code(hs_code, product_name)
+            results["api_results"] = api_results
+            results["search_methods"].append("data_gov_api")
+            print(f"    ✅ API 검색 완료: {api_results.get('total_requirements', 0)}개 요구사항")
+        except Exception as e:
+            print(f"    ❌ API 검색 실패: {e}")
+            results["api_results"] = {"error": str(e)}
+        
+        # 2. Tavily Search (웹 검색)
+        try:
+            print(f"\n  🔍 2단계: Tavily Search 웹 검색")
+            # 8자리와 6자리 HS코드로 검색
+            hs_code_8digit = hs_code
+            hs_code_6digit = ".".join(hs_code.split(".")[:2]) if "." in hs_code else hs_code
+            
+            web_queries = {
+                f"FDA_8digit": f"site:fda.gov import requirements {product_name} HS {hs_code_8digit}",
+                f"USDA_8digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_8digit}",
+                f"EPA_8digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_8digit}",
+                f"FCC_8digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_8digit}",
+                f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {product_name}",
+                f"CPSC_8digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_8digit}",
+                f"FDA_6digit": f"site:fda.gov import requirements {product_name} HS {hs_code_6digit}",
+                f"USDA_6digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_6digit}",
+                f"EPA_6digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_6digit}",
+                f"FCC_6digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_6digit}",
+                f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {product_name}",
+                f"CPSC_6digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_6digit}"
+            }
+            
+            web_results = {}
+            for query_key, query in web_queries.items():
+                try:
+                    search_results = await self.search_service.search(query, max_results=5)
+                    web_results[query_key] = {
+                        "query": query,
+                        "results": search_results,
+                        "urls": [r.get("url") for r in search_results if r.get("url")],
+                        "hs_code_type": "8digit" if "8digit" in query_key else "6digit",
+                        "agency": query_key.split("_")[0]
+                    }
+                except Exception as e:
+                    web_results[query_key] = {"error": str(e)}
+            
+            results["web_results"] = web_results
+            results["search_methods"].append("tavily_search")
+            print(f"    ✅ 웹 검색 완료: {len(web_results)}개 쿼리")
+            
+        except Exception as e:
+            print(f"    ❌ 웹 검색 실패: {e}")
+            results["web_results"] = {"error": str(e)}
+        
+        # 3. 결과 통합
+        print(f"\n  🔄 3단계: 결과 통합")
+        combined_results = self._combine_search_results(results["api_results"], results["web_results"])
+        results["combined_results"] = combined_results
+        
+        print(f"\n✅ [HYBRID] 검색 완료")
+        print(f"  🔍 검색 방법: {', '.join(results['search_methods'])}")
+        print(f"  📋 총 요구사항: {combined_results.get('total_requirements', 0)}개")
+        print(f"  🏆 인증요건: {combined_results.get('total_certifications', 0)}개")
+        print(f"  📄 필요서류: {combined_results.get('total_documents', 0)}개")
+        
+        return results
+    
+    def _combine_search_results(self, api_results: Dict[str, Any], web_results: Dict[str, Any]) -> Dict[str, Any]:
+        """API와 웹 검색 결과 통합"""
+        combined = {
+            "certifications": [],
+            "documents": [],
+            "sources": [],
+            "total_requirements": 0,
+            "total_certifications": 0,
+            "total_documents": 0,
+            "agencies_found": [],
+            "search_sources": {
+                "api_success": "api_results" in api_results and "error" not in api_results,
+                "web_success": "web_results" in web_results and "error" not in web_results
+            }
+        }
+        
+        # API 결과 통합
+        if "agencies" in api_results and "error" not in api_results:
+            agencies = api_results.get("agencies", {})
+            for agency, data in agencies.items():
+                if data.get("status") == "success":
+                    combined["certifications"].extend(data.get("certifications", []))
+                    combined["documents"].extend(data.get("documents", []))
+                    combined["sources"].extend(data.get("sources", []))
+                    combined["agencies_found"].append(agency)
+        
+        # 웹 결과 통합 (기본 요구사항 추가)
+        if "web_results" in web_results and "error" not in web_results:
+            # 웹 검색에서 찾은 기관들에 대한 기본 요구사항 추가
+            found_agencies = set()
+            for query_key, data in web_results.items():
+                if "error" not in data and data.get("urls"):
+                    agency = data.get("agency")
+                    found_agencies.add(agency)
+            
+            # 찾은 기관들에 대한 기본 요구사항 추가
+            for agency in found_agencies:
+                if agency not in combined["agencies_found"]:
+                    combined["certifications"].append({
+                        "name": f"{agency} 기본 등록 요구사항",
+                        "required": True,
+                        "description": f"{agency}에서 요구하는 기본 등록 요구사항",
+                        "agency": agency,
+                        "url": f"https://www.{agency.lower()}.gov"
+                    })
+                    combined["agencies_found"].append(agency)
+        
+        # 통계 계산
+        combined["total_certifications"] = len(combined["certifications"])
+        combined["total_documents"] = len(combined["documents"])
+        combined["total_requirements"] = combined["total_certifications"] + combined["total_documents"]
+        
+        return combined

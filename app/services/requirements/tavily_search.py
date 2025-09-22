@@ -1,12 +1,12 @@
 import os
 from typing import List, Dict
 
-# Tavily 패키지 import 시도
+# Tavily 패키지 import 시도 (tavily 우선)
 try:
-    from langchain_community.tools.tavily_search.tool import TavilySearchResults
+    from tavily import TavilyClient
     TAVILY_AVAILABLE = True
-    TAVILY_TYPE = "langchain_community"
-    print("✅ langchain_community.tavily_search 사용")
+    TAVILY_TYPE = "tavily"
+    print("✅ tavily 사용")
 except ImportError:
     try:
         from tavily_python import TavilySearchResults
@@ -14,15 +14,9 @@ except ImportError:
         TAVILY_TYPE = "tavily_python"
         print("✅ tavily_python 사용")
     except ImportError:
-        try:
-            from tavily import TavilyClient
-            TAVILY_AVAILABLE = True
-            TAVILY_TYPE = "tavily"
-            print("✅ tavily 사용")
-        except ImportError:
-            TAVILY_AVAILABLE = False
-            TAVILY_TYPE = None
-            print("⚠️ Tavily 패키지가 설치되지 않았습니다. pip install tavily-python==0.3.3 실행하세요.")
+        TAVILY_AVAILABLE = False
+        TAVILY_TYPE = None
+        print("⚠️ Tavily 패키지가 설치되지 않았습니다. pip install tavily-python==0.3.3 실행하세요.")
 
 
 class TavilySearchService:
@@ -51,11 +45,7 @@ class TavilySearchService:
         if not self.client and self.is_enabled():
             try:
                 print(f"  🔧 Tavily 클라이언트 초기화 - 타입: {TAVILY_TYPE}")
-                if TAVILY_TYPE == "langchain_community":
-                    # langchain_community 방식 (제공된 코드와 동일)
-                    self.client = TavilySearchResults()
-                    print(f"  ✅ TavilySearchResults 클라이언트 초기화 완료")
-                elif TAVILY_TYPE == "tavily_python":
+                if TAVILY_TYPE == "tavily_python":
                     # tavily-python 방식
                     self.client = TavilySearchResults(api_key=self.api_key)
                     print(f"  ✅ TavilySearchResults (tavily_python) 클라이언트 초기화 완료")
@@ -87,12 +77,7 @@ class TavilySearchService:
             
             # Tavily 검색 실행
             print(f"  🔍 TavilySearch 실행 - 타입: {TAVILY_TYPE}")
-            if TAVILY_TYPE == "langchain_community":
-                # langchain_community 방식 (제공된 코드와 동일)
-                print(f"  🔧 langchain_community 방식 사용")
-                results = client.invoke({"query": query})
-                print(f"  📊 TavilySearch 결과: {len(results) if isinstance(results, list) else 'N/A'}개")
-            elif TAVILY_TYPE == "tavily_python":
+            if TAVILY_TYPE == "tavily_python":
                 # tavily-python 방식
                 print(f"  🔧 tavily_python 방식 사용")
                 if hasattr(client, 'search'):

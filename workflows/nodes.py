@@ -26,19 +26,54 @@ class RequirementsNodes:
         print(f"  📋 HS코드: {hs_code}")
         print(f"  📦 상품명: {product_name}")
         
-        # 기본 URL 폴백 (TavilySearch 실패 시 사용) - 더 간단한 URL 사용
+        # 기본 URL 폴백 (TavilySearch 실패 시 사용) - 9개 기관 모두
         default_urls = {
             "FDA": "https://www.fda.gov",
             "FCC": "https://www.fcc.gov",
-            "CBP": "https://www.cbp.gov"
+            "CBP": "https://www.cbp.gov",
+            "USDA": "https://www.usda.gov",
+            "EPA": "https://www.epa.gov",
+            "CPSC": "https://www.cpsc.gov",
+            "KCS": "https://www.customs.go.kr",
+            "MFDS": "https://www.mfds.go.kr",
+            "MOTIE": "https://www.motie.go.kr"
         }
         
-        # 각 기관별 검색 쿼리
-        search_queries = {
-            "FDA": f"FDA import requirements {product_name} HS {hs_code}",
-            "FCC": f"FCC device authorization requirements {product_name} HS {hs_code}",
-            "CBP": f"CBP import documentation requirements HS {hs_code} {product_name}",
-        }
+        # HS코드 8자리와 6자리 추출
+        hs_code_8digit = hs_code
+        hs_code_6digit = ".".join(hs_code.split(".")[:2]) if "." in hs_code else hs_code
+        
+        print(f"  📋 8자리 HS코드: {hs_code_8digit}")
+        print(f"  📋 6자리 HS코드: {hs_code_6digit}")
+        
+        # 각 기관별 검색 쿼리 (8자리와 6자리 모두)
+        search_queries = {}
+        
+        # 8자리 HS코드 검색 (정확)
+        search_queries.update({
+            f"FDA_8digit": f"site:fda.gov import requirements {product_name} HS {hs_code_8digit}",
+            f"FCC_8digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_8digit}",
+            f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {product_name}",
+            f"USDA_8digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_8digit}",
+            f"EPA_8digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_8digit}",
+            f"CPSC_8digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_8digit}",
+            f"KCS_8digit": f"site:customs.go.kr Korea customs import requirements {product_name} HS {hs_code_8digit}",
+            f"MFDS_8digit": f"site:mfds.go.kr food drug safety import {product_name} HS {hs_code_8digit}",
+            f"MOTIE_8digit": f"site:motie.go.kr trade policy import requirements {product_name} HS {hs_code_8digit}"
+        })
+        
+        # 6자리 HS코드 검색 (유사)
+        search_queries.update({
+            f"FDA_6digit": f"site:fda.gov import requirements {product_name} HS {hs_code_6digit}",
+            f"FCC_6digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_6digit}",
+            f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {product_name}",
+            f"USDA_6digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_6digit}",
+            f"EPA_6digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_6digit}",
+            f"CPSC_6digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_6digit}",
+            f"KCS_6digit": f"site:customs.go.kr Korea customs import requirements {product_name} HS {hs_code_6digit}",
+            f"MFDS_6digit": f"site:mfds.go.kr food drug safety import {product_name} HS {hs_code_6digit}",
+            f"MOTIE_6digit": f"site:motie.go.kr trade policy import requirements {product_name} HS {hs_code_6digit}"
+        })
         
         search_results = {}
         
@@ -46,14 +81,15 @@ class RequirementsNodes:
             print(f"\n  📡 {agency} 검색 중...")
             print(f"    쿼리: {query}")
             
-            # TavilySearch 시도
-            results = await self.search_service.search(query, max_results=5)
+            # TavilySearch 시도 (더 많은 결과 수집)
+            results = await self.search_service.search(query, max_results=10)
             print(f"    📊 TavilySearch 결과: {len(results)}개")
             
             if not results:
                 print(f"    💡 팁: TAVILY_API_KEY를 설정하면 더 정확한 검색 결과를 얻을 수 있습니다.")
             
-            chosen_url = None
+            # 여러 링크 수집 (최대 5개)
+            chosen_urls = []
             
             if results:
                 # 각 결과 상세 출력
@@ -63,33 +99,24 @@ class RequirementsNodes:
                     print(f"      {i}. {title}")
                     print(f"         URL: {url}")
                 
-                # 공식 도메인 우선 선택
-                preferred_domains = {
-                    "FDA": ["fda.gov"],
-                    "FCC": ["fcc.gov"],
-                    "CBP": ["cbp.gov"],
-                }.get(agency, [])
-                
-                for result in results:
-                    url = result.get("url", "")
-                    if any(domain in url for domain in preferred_domains):
-                        chosen_url = url
-                        print(f"    ✅ {agency} 공식 도메인 선택: {url}")
-                        break
-                
-                if not chosen_url:
-                    chosen_url = results[0].get("url")
-                    print(f"    🔄 {agency} 첫 번째 결과 사용: {chosen_url}")
+                # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 5개 선택)
+                chosen_urls = [result.get("url") for result in results[:5] if result.get("url")]
+                print(f"    ✅ {agency} 공식 사이트 결과 {len(chosen_urls)}개 선택")
             else:
                 # TavilySearch 실패 시 기본 URL 사용
-                chosen_url = default_urls.get(agency)
-                print(f"    🔄 {agency} TavilySearch 실패, 기본 URL 사용: {chosen_url}")
+                agency_name = agency.split("_")[0]  # FDA_8digit -> FDA
+                default_url = default_urls.get(agency_name)
+                if default_url:
+                    chosen_urls = [default_url]
+                print(f"    🔄 {agency} TavilySearch 실패, 기본 URL 사용: {default_url}")
             
             search_results[agency] = {
-                "url": chosen_url,
+                "urls": chosen_urls,  # 여러 URL 저장
                 "all_results": results,
                 "query": query,
-                "is_fallback": not results  # 폴백 사용 여부 표시
+                "is_fallback": not results,  # 폴백 사용 여부 표시
+                "hs_code_type": "8digit" if "8digit" in agency else "6digit",
+                "agency": agency.split("_")[0]  # FDA_8digit -> FDA
             }
         
         print(f"\n📋 [NODE] 검색 완료 - {len([r for r in search_results.values() if r['url']])}개 URL 발견")
@@ -109,29 +136,75 @@ class RequirementsNodes:
         
         scraped_data = {}
         
-        for agency, search_data in search_results.items():
-            if not search_data["url"]:
-                print(f"  ❌ {agency}: 스크래핑할 URL 없음")
+        # 기관별로 8자리와 6자리 결과 통합
+        agency_results = {}
+        
+        for agency_key, search_data in search_results.items():
+            agency_name = search_data["agency"]
+            hs_code_type = search_data["hs_code_type"]
+            
+            if agency_name not in agency_results:
+                agency_results[agency_name] = {
+                    "8digit": {"urls": [], "results": []},
+                    "6digit": {"urls": [], "results": []}
+                }
+            
+            agency_results[agency_name][hs_code_type]["urls"] = search_data["urls"]
+        
+        # 각 기관별로 스크래핑 수행
+        for agency_name, agency_data in agency_results.items():
+            print(f"\n  📄 {agency_name} 스크래핑 중...")
+            
+            # 8자리와 6자리 URL 모두 수집
+            all_urls = agency_data["8digit"]["urls"] + agency_data["6digit"]["urls"]
+            
+            if not all_urls:
+                print(f"    ❌ {agency_name}: 스크래핑할 URL 없음")
+                # URL이 없어도 None으로 결과 저장
+                scraped_data[agency_name] = {
+                    "certifications": [],
+                    "documents": [],
+                    "labeling": [],
+                    "sources": [],
+                    "status": "no_urls_found",
+                    "hs_code_8digit": {"urls": agency_data["8digit"]["urls"], "results": []},
+                    "hs_code_6digit": {"urls": agency_data["6digit"]["urls"], "results": []}
+                }
                 continue
-                
-            print(f"\n  📄 {agency} 스크래핑 중...")
-            print(f"    URL: {search_data['url']}")
+            
+            print(f"    📋 8자리 URL: {len(agency_data['8digit']['urls'])}개")
+            print(f"    📋 6자리 URL: {len(agency_data['6digit']['urls'])}개")
+            print(f"    📋 총 URL: {len(all_urls)}개")
             
             try:
-                if agency == "FDA":
-                    result = await self.web_scraper.scrape_fda_requirements(hs_code, search_data["url"])
-                elif agency == "FCC":
-                    result = await self.web_scraper.scrape_fcc_requirements(hs_code, search_data["url"])
-                elif agency == "CBP":
-                    result = await self.web_scraper.scrape_cbp_requirements(hs_code, search_data["url"])
+                # 9개 기관 모두 처리
+                if agency_name == "FDA":
+                    result = await self.web_scraper.scrape_fda_requirements(hs_code, all_urls[0])
+                elif agency_name == "FCC":
+                    result = await self.web_scraper.scrape_fcc_requirements(hs_code, all_urls[0])
+                elif agency_name == "CBP":
+                    result = await self.web_scraper.scrape_cbp_requirements(hs_code, all_urls[0])
+                elif agency_name == "USDA":
+                    result = await self.web_scraper.scrape_usda_requirements(hs_code, all_urls[0])
+                elif agency_name == "EPA":
+                    result = await self.web_scraper.scrape_epa_requirements(hs_code, all_urls[0])
+                elif agency_name == "CPSC":
+                    result = await self.web_scraper.scrape_cpsc_requirements(hs_code, all_urls[0])
+                elif agency_name == "KCS":
+                    result = await self.web_scraper.scrape_kcs_requirements(hs_code, all_urls[0])
+                elif agency_name == "MFDS":
+                    result = await self.web_scraper.scrape_mfds_requirements(hs_code, all_urls[0])
+                elif agency_name == "MOTIE":
+                    result = await self.web_scraper.scrape_motie_requirements(hs_code, all_urls[0])
                 else:
+                    print(f"    ❌ {agency_name}: 지원되지 않는 기관")
                     continue
                 
                 # 스크래핑 결과 상세 로깅
                 certs = result.get("certifications", [])
                 docs = result.get("documents", [])
                 
-                print(f"    ✅ {agency} 스크래핑 성공:")
+                print(f"    ✅ {agency_name} 스크래핑 성공:")
                 print(f"      📋 인증요건: {len(certs)}개")
                 for cert in certs:
                     print(f"        • {cert.get('name', 'Unknown')} ({cert.get('agency', 'Unknown')})")
@@ -140,15 +213,30 @@ class RequirementsNodes:
                 for doc in docs:
                     print(f"        • {doc.get('name', 'Unknown')}")
                 
-                scraped_data[agency] = result
+                # HS코드 구분 정보 추가
+                result["hs_code_8digit"] = {
+                    "urls": agency_data["8digit"]["urls"],
+                    "results": result.get("certifications", []) + result.get("documents", [])
+                }
+                result["hs_code_6digit"] = {
+                    "urls": agency_data["6digit"]["urls"],
+                    "results": []
+                }
+                result["status"] = "success"
+                
+                scraped_data[agency_name] = result
                 
             except Exception as e:
-                print(f"    ❌ {agency} 스크래핑 실패: {e}")
-                scraped_data[agency] = {
-                    "agency": agency,
-                    "error": str(e),
+                print(f"    ❌ {agency_name} 스크래핑 실패: {e}")
+                scraped_data[agency_name] = {
                     "certifications": [],
-                    "documents": []
+                    "documents": [],
+                    "labeling": [],
+                    "sources": [],
+                    "status": "scraping_failed",
+                    "error": str(e),
+                    "hs_code_8digit": {"urls": agency_data["8digit"]["urls"], "results": []},
+                    "hs_code_6digit": {"urls": agency_data["6digit"]["urls"], "results": []}
                 }
         
         print(f"\n📋 [NODE] 스크래핑 완료 - {len(scraped_data)}개 기관 처리")
@@ -169,8 +257,16 @@ class RequirementsNodes:
         all_sources = []
         
         for agency, data in scraped_data.items():
-            if "error" in data:
-                print(f"  ❌ {agency}: 오류로 인해 제외")
+            status = data.get("status", "unknown")
+            
+            if status == "no_urls_found":
+                print(f"  ❌ {agency}: URL 없음 (None)")
+                continue
+            elif status == "scraping_failed":
+                print(f"  ❌ {agency}: 스크래핑 실패 (None)")
+                continue
+            elif "error" in data:
+                print(f"  ❌ {agency}: 오류로 인해 제외 (None)")
                 continue
                 
             print(f"  📊 {agency} 데이터 통합:")
