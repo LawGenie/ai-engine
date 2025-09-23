@@ -82,6 +82,68 @@ class DataGovAPIService:
             'Content-Type': 'application/json'
         }
 
+        # NOTE: moved openfda_endpoints initialization here to ensure availability
+        # openFDA official endpoints mapping (reference: open.fda.gov)
+        # These are raw endpoints for direct access (not via api.data.gov proxy)
+        self.openfda_endpoints: Dict[str, Dict[str, str]] = {
+            "drug": {
+                # Adverse Events
+                "event": "https://api.fda.gov/drug/event.json",
+                # Product Labeling
+                "label": "https://api.fda.gov/drug/label.json",
+                # NDC Directory
+                "ndc": "https://api.fda.gov/drug/ndc.json",
+                # Recall Enforcement Reports
+                "enforcement": "https://api.fda.gov/drug/enforcement.json",
+                # Drugs@FDA
+                "drugsfda": "https://api.fda.gov/drug/drugsfda.json",
+                # Drug Shortages
+                "shortages": "https://api.fda.gov/drug/shortages.json",
+            },
+            "device": {
+                # 510(k)
+                "510k": "https://api.fda.gov/device/510k.json",
+                # Device Adverse Events
+                "event": "https://api.fda.gov/device/event.json",
+                # Device Recalls (enforcement)
+                "enforcement": "https://api.fda.gov/device/enforcement.json",
+            },
+            "food": {
+                # Recall Enforcement Reports
+                "enforcement": "https://api.fda.gov/food/enforcement.json",
+                # Adverse Events (CAERS)
+                "event": "https://api.fda.gov/food/event.json",
+            },
+            "cosmetic": {
+                # Cosmetic Adverse Events
+                "event": "https://api.fda.gov/cosmetic/event.json",
+            },
+            "animalandveterinary": {
+                # Adverse Events
+                "event": "https://api.fda.gov/animalandveterinary/event.json",
+            },
+        }
+
+        
+    def _make_item_key(self, item: Dict[str, Any], agency: str) -> str:
+        """Build a stable key to dedupe requirement items across/within agencies."""
+        name = (item.get("name") or "").strip().lower()
+        url = (item.get("url") or "").strip().lower()
+        required = item.get("required")
+        return f"{agency}|{name}|{url}|{required}"
+
+    def _dedupe_items(self, items: List[Dict[str, Any]], agency: str) -> List[Dict[str, Any]]:
+        """Remove duplicates preserving order using the stable key."""
+        seen: set[str] = set()
+        unique: List[Dict[str, Any]] = []
+        for it in items:
+            key = self._make_item_key(it, agency)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(it)
+        return unique
+
         # openFDA official endpoints mapping (reference: open.fda.gov)
         # These are raw endpoints for direct access (not via api.data.gov proxy)
         self.openfda_endpoints: Dict[str, Dict[str, str]] = {
@@ -278,10 +340,39 @@ class DataGovAPIService:
                     "sources": []
                 }
             else:
+                # Per-agency results are already deduped; attach
                 results["agencies"][agency] = result
-                results["total_requirements"] += len(result.get("certifications", [])) + len(result.get("documents", []))
-                results["total_certifications"] += len(result.get("certifications", []))
-                results["total_documents"] += len(result.get("documents", []))
+
+        # Compute global unique counts across agencies
+        global_certifications: List[Dict[str, Any]] = []
+        global_documents: List[Dict[str, Any]] = []
+        seen_cert: set[str] = set()
+        seen_doc: set[str] = set()
+
+        for agency, data in results["agencies"].items():
+            certs = data.get("certifications", [])
+            docs = data.get("documents", [])
+            for it in certs:
+                key = self._make_item_key(it, agency)
+                if key in seen_cert:
+                    continue
+                seen_cert.add(key)
+                global_certifications.append(it)
+            for it in docs:
+                key = self._make_item_key(it, agency)
+                if key in seen_doc:
+                    continue
+                seen_doc.add(key)
+                global_documents.append(it)
+
+        results["total_certifications"] = len(global_certifications)
+        results["total_documents"] = len(global_documents)
+        results["total_requirements"] = results["total_certifications"] + results["total_documents"]
+        results["unique_summary"] = {
+            "certifications_unique": results["total_certifications"],
+            "documents_unique": results["total_documents"],
+            "requirements_unique": results["total_requirements"]
+        }
         
         print(f"\n✅ [DATA.GOV] 검색 완료")
         print(f"  📋 총 요구사항: {results['total_requirements']}개")
@@ -346,7 +437,8 @@ class DataGovAPIService:
                 tasks = []
                 # 한국어 제품명을 영어로 변환 (간단한 매핑)
                 english_name = self._translate_to_english(product_name)
-                
+                tokens = [t for t in english_name.split() if t]
+
                 for endpoint in endpoints:
                     # 엔드포인트별 올바른 검색 필드로 스위치
                     if "/drug/" in endpoint:
@@ -364,23 +456,46 @@ class DataGovAPIService:
                     else:
                         field = search_field
 
-                    # 1. 상품명 기반 검색 (8자리 태그)
-                    params_name_8digit = {
+                    # Build AND/OR queries for this endpoint's field
+                    and_query = None
+                    or_query = None
+                    if tokens:
+                        # openFDA query language uses spaces as AND by default, but we make it explicit
+                        and_query = "+AND+".join([f"{field}:{t}" for t in tokens])
+                        or_query = "+OR+".join([f"{field}:{t}" for t in tokens])
+
+                    # name_exact
+                    params_exact = {
                         "search": f"{field}:\"{english_name}\"",
                         "limit": 10
                     }
-                    task_name_8digit = self._call_fda_endpoint(client, endpoint, params_name_8digit, "상품명(8자리)")
-                    tasks.append(task_name_8digit)
+                    tasks.append(self._call_fda_endpoint(client, endpoint, params_exact, "name_exact"))
 
-                    # 2. 상품명 기반 검색 (6자리 태그)
-                    params_name_6digit = {
-                        "search": f"{field}:\"{english_name}\"",
-                        "limit": 10
-                    }
-                    task_name_6digit = self._call_fda_endpoint(client, endpoint, params_name_6digit, "상품명(6자리)")
-                    tasks.append(task_name_6digit)
+                    # name_and
+                    if and_query:
+                        params_and = {
+                            "search": and_query,
+                            "limit": 10
+                        }
+                        tasks.append(self._call_fda_endpoint(client, endpoint, params_and, "name_and"))
 
-                    # 3. HS코드 검색은 공식 지원되지 않으므로 제거 (404 원인)
+                    # name_or
+                    if or_query:
+                        params_or = {
+                            "search": or_query,
+                            "limit": 10
+                        }
+                        tasks.append(self._call_fda_endpoint(client, endpoint, params_or, "name_or"))
+
+                    # name_token (each token separately)
+                    for tok in tokens[:2] if tokens else []:  # limit single-token fanout
+                        params_tok = {
+                            "search": f"{field}:{tok}",
+                            "limit": 10
+                        }
+                        tasks.append(self._call_fda_endpoint(client, endpoint, params_tok, f"name_token:{tok}"))
+
+                    # HS코드 검색은 공식 지원되지 않으므로 제거 (404 원인)
                 
                 # 모든 API 호출을 병렬로 실행
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -394,8 +509,8 @@ class DataGovAPIService:
                         print(f"    ❌ API 호출 실패: {result}")
                         continue
                     
-                    endpoint = endpoints[i // 2]  # 8자리/6자리 쌍이므로 2로 나눔
-                    hs_type = "8자리" if i % 2 == 0 else "6자리"
+                    endpoint = result.get("endpoint", "unknown")
+                    hs_type = result.get("hs_type", "unknown")
                     
                     if result.get("success"):
                         data = result["data"]
@@ -404,7 +519,7 @@ class DataGovAPIService:
                         
                         # 소스 정보 추가
                         source_info = {
-                            "title": f"FDA {endpoint.split('/')[-1].replace('.json', '')} ({hs_type})",
+                            "title": f"FDA {endpoint.split('/')[-1].replace('.json', '')} [{hs_type}]",
                             "url": endpoint,
                             "type": "공식 API",
                             "relevance": "high",
@@ -506,11 +621,24 @@ class DataGovAPIService:
                         "relevance": "medium"
                     })
                 
+                # 중복 제거된 최종 결과
+                final_certifications = self._dedupe_items(certifications, "FDA")
+                final_documents = self._dedupe_items(documents, "FDA")
+                
+                # 상세 로그 출력
+                print(f"    📋 FDA 인증요건 ({len(final_certifications)}개):")
+                for i, cert in enumerate(final_certifications, 1):
+                    print(f"      {i}. {cert['name']} - {cert['description'][:100]}...")
+                
+                print(f"    📄 FDA 필요서류 ({len(final_documents)}개):")
+                for i, doc in enumerate(final_documents, 1):
+                    print(f"      {i}. {doc['name']} - {doc['description'][:100]}...")
+                
                 return {
                     "status": "success",
                     "agency": "FDA",
-                    "certifications": certifications,
-                    "documents": documents,
+                    "certifications": final_certifications,
+                    "documents": final_documents,
                     "sources": sources,
                     "hs_code_matched": True,
                     "api_source": "data.gov",
@@ -608,11 +736,24 @@ class DataGovAPIService:
                     "relevance": "high"
                 })
                 
+                # 중복 제거된 최종 결과
+                final_certifications = self._dedupe_items(certifications, "USDA")
+                final_documents = self._dedupe_items(documents, "USDA")
+                
+                # 상세 로그 출력
+                print(f"    📋 USDA 인증요건 ({len(final_certifications)}개):")
+                for i, cert in enumerate(final_certifications, 1):
+                    print(f"      {i}. {cert['name']} - {cert['description'][:100]}...")
+                
+                print(f"    📄 USDA 필요서류 ({len(final_documents)}개):")
+                for i, doc in enumerate(final_documents, 1):
+                    print(f"      {i}. {doc['name']} - {doc['description'][:100]}...")
+                
                 return {
                     "status": "success",
                     "agency": "USDA",
-                    "certifications": certifications,
-                    "documents": documents,
+                    "certifications": final_certifications,
+                    "documents": final_documents,
                     "sources": sources,
                     "hs_code_matched": True,
                     "api_source": "data.gov",
@@ -680,11 +821,24 @@ class DataGovAPIService:
                     "relevance": "high"
                 })
                 
+                # 중복 제거된 최종 결과
+                final_certifications = self._dedupe_items(certifications, "EPA")
+                final_documents = self._dedupe_items(documents, "EPA")
+                
+                # 상세 로그 출력
+                print(f"    📋 EPA 인증요건 ({len(final_certifications)}개):")
+                for i, cert in enumerate(final_certifications, 1):
+                    print(f"      {i}. {cert['name']} - {cert['description'][:100]}...")
+                
+                print(f"    📄 EPA 필요서류 ({len(final_documents)}개):")
+                for i, doc in enumerate(final_documents, 1):
+                    print(f"      {i}. {doc['name']} - {doc['description'][:100]}...")
+                
                 return {
                     "status": "success",
                     "agency": "EPA",
-                    "certifications": certifications,
-                    "documents": documents,
+                    "certifications": final_certifications,
+                    "documents": final_documents,
                     "sources": sources,
                     "hs_code_matched": True,
                     "api_source": "data.gov",
@@ -764,11 +918,24 @@ class DataGovAPIService:
                     "relevance": "high"
                 })
                 
+                # 중복 제거된 최종 결과
+                final_certifications = self._dedupe_items(certifications, "FCC")
+                final_documents = self._dedupe_items(documents, "FCC")
+                
+                # 상세 로그 출력
+                print(f"    📋 FCC 인증요건 ({len(final_certifications)}개):")
+                for i, cert in enumerate(final_certifications, 1):
+                    print(f"      {i}. {cert['name']} - {cert['description'][:100]}...")
+                
+                print(f"    📄 FCC 필요서류 ({len(final_documents)}개):")
+                for i, doc in enumerate(final_documents, 1):
+                    print(f"      {i}. {doc['name']} - {doc['description'][:100]}...")
+                
                 return {
                     "status": "success",
                     "agency": "FCC",
-                    "certifications": certifications,
-                    "documents": documents,
+                    "certifications": final_certifications,
+                    "documents": final_documents,
                     "sources": sources,
                     "hs_code_matched": True,
                     "api_source": "data.gov",
@@ -850,14 +1017,27 @@ class DataGovAPIService:
                             "raw_data": item
                         })
                 
+                # 중복 제거된 최종 결과
+                final_certifications = self._dedupe_items(certifications, "CBP")
+                final_documents = self._dedupe_items(documents, "CBP")
+                
+                # 상세 로그 출력
+                print(f"    📋 CBP 인증요건 ({len(final_certifications)}개):")
+                for i, cert in enumerate(final_certifications, 1):
+                    print(f"      {i}. {cert['name']} - {cert['description'][:100]}...")
+                
+                print(f"    📄 CBP 필요서류 ({len(final_documents)}개):")
+                for i, doc in enumerate(final_documents, 1):
+                    print(f"      {i}. {doc['name']} - {doc['description'][:100]}...")
+                
                 return {
                     "status": "success",
                     "agency": "CBP",
-                    "certifications": certifications,
-                    "documents": documents,
+                    "certifications": final_certifications,
+                    "documents": final_documents,
                     "sources": sources,
-                    "total_certifications": len(certifications),
-                    "total_documents": len(documents),
+                    "total_certifications": len(final_certifications),
+                    "total_documents": len(final_documents),
                     "total_sources": len(sources),
                     "raw_api_data": data
                 }
@@ -937,14 +1117,27 @@ class DataGovAPIService:
                             "raw_data": item
                         })
                 
+                # 중복 제거된 최종 결과
+                final_certifications = self._dedupe_items(certifications, "CPSC")
+                final_documents = self._dedupe_items(documents, "CPSC")
+                
+                # 상세 로그 출력
+                print(f"    📋 CPSC 인증요건 ({len(final_certifications)}개):")
+                for i, cert in enumerate(final_certifications, 1):
+                    print(f"      {i}. {cert['name']} - {cert['description'][:100]}...")
+                
+                print(f"    📄 CPSC 필요서류 ({len(final_documents)}개):")
+                for i, doc in enumerate(final_documents, 1):
+                    print(f"      {i}. {doc['name']} - {doc['description'][:100]}...")
+                
                 return {
                     "status": "success",
                     "agency": "CPSC",
-                    "certifications": certifications,
-                    "documents": documents,
+                    "certifications": final_certifications,
+                    "documents": final_documents,
                     "sources": sources,
-                    "total_certifications": len(certifications),
-                    "total_documents": len(documents),
+                    "total_certifications": len(final_certifications),
+                    "total_documents": len(final_documents),
                     "total_sources": len(sources),
                     "raw_api_data": data
                 }
