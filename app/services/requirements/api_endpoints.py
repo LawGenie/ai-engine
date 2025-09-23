@@ -82,23 +82,22 @@ class APIEndpoints:
             
             # EPA (Environmental Protection Agency)
             "epa": {
-                "base_url": "https://enviro.epa.gov",
+                "base_url": "https://comptox.epa.gov",
                 "endpoints": {
-                    "envirofacts": {
-                        "base": "https://enviro.epa.gov/enviro/efservice",
-                        "air_quality": "https://enviro.epa.gov/enviro/efservice/air_quality",
-                        "water_quality": "https://enviro.epa.gov/enviro/efservice/water_quality",
-                        "waste": "https://enviro.epa.gov/enviro/efservice/waste",
-                        "chemical": "https://enviro.epa.gov/enviro/efservice/chemical"
+                    "chemicals": {
+                        "base": "https://comptox.epa.gov/dashboard/api",
+                        "search": "https://comptox.epa.gov/dashboard/api/chemical/search",
+                        "details": "https://comptox.epa.gov/dashboard/api/chemical/details",
+                        "lists": "https://comptox.epa.gov/dashboard/api/chemical/lists"
                     },
-                    "simple_search": {
-                        "base": "https://www.epa.gov/enviro/simple-search"
-                    },
-                    "bulletins_live": {
-                        "query": "https://services.arcgis.com/8df8p0NlLFEShl0r/arcgis/rest/services/BulletinsLiveTwo/FeatureServer/0/query"
+                    "aqs": {
+                        "base": "https://aqs.epa.gov/data/api",
+                        "sample_data": "https://aqs.epa.gov/data/api/sampleData/byState",
+                        "daily_data": "https://aqs.epa.gov/data/api/dailyData/byState",
+                        "annual_data": "https://aqs.epa.gov/data/api/annualData/byState"
                     }
                 },
-                "api_key_required": False,
+                "api_key_required": True,
                 "rate_limit": "1000/hour"
             },
             
@@ -106,6 +105,11 @@ class APIEndpoints:
             "fcc": {
                 "base_url": "https://api.fcc.gov",
                 "endpoints": {
+                    "device_authorization": {
+                        "base": "https://api.fcc.gov/device/authorization",
+                        "grants": "https://api.fcc.gov/device/authorization/grants",
+                        "applications": "https://api.fcc.gov/device/authorization/applications"
+                    },
                     "ecfs": {
                         "base": "https://api.fcc.gov/ecfs",
                         "proceedings": "https://api.fcc.gov/ecfs/proceedings",
@@ -113,14 +117,12 @@ class APIEndpoints:
                     },
                     "consumer_help": {
                         "complaints": "https://opendata.fcc.gov/resource/sr6c-syda.json"
-                    },
-                    "device_authorization": {
-                        "base": "https://api.fcc.gov/device/authorization",
-                        "grants": "https://api.fcc.gov/device/authorization/grants"
                     }
                 },
                 "api_key_required": False,
-                "rate_limit": "1000/hour"
+                "rate_limit": "1000/hour",
+                "retry_enabled": True,
+                "max_retries": 3
             },
             
             # CBP (Customs and Border Protection)
@@ -130,11 +132,17 @@ class APIEndpoints:
                     "trade_statistics": {
                         "base": "https://api.cbp.gov/trade/statistics",
                         "imports": "https://api.cbp.gov/trade/statistics/imports",
-                        "exports": "https://api.cbp.gov/trade/statistics/exports"
+                        "exports": "https://api.cbp.gov/trade/statistics/exports",
+                        "hs_codes": "https://api.cbp.gov/trade/statistics/hs-codes"
                     },
                     "rules_regulations": {
                         "base": "https://api.cbp.gov/rules-regulations",
-                        "tariffs": "https://api.cbp.gov/rules-regulations/tariffs"
+                        "tariffs": "https://api.cbp.gov/rules-regulations/tariffs",
+                        "requirements": "https://api.cbp.gov/rules-regulations/requirements"
+                    },
+                    "data": {
+                        "base": "https://api.cbp.gov/data",
+                        "trade_data": "https://api.cbp.gov/data/trade"
                     }
                 },
                 "api_key_required": True,
@@ -148,7 +156,13 @@ class APIEndpoints:
                     "recalls": {
                         "api": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API",
                         "recalls": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API/recalls",
-                        "search": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API/recalls/search"
+                        "search": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API/recalls/search",
+                        "json": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API/recalls.json"
+                    },
+                    "data": {
+                        "base": "https://www.cpsc.gov/api",
+                        "recalls": "https://www.cpsc.gov/api/recalls",
+                        "products": "https://www.cpsc.gov/api/products"
                     }
                 },
                 "api_key_required": False,

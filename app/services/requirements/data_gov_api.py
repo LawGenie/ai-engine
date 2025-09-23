@@ -774,19 +774,21 @@ class DataGovAPIService:
             }
     
     async def _search_epa_requirements(self, hs_code: str, product_name: str) -> Dict[str, Any]:
-        """EPA API로 HS코드 기반 요구사항 검색 (Envirofacts API 사용)"""
+        """EPA API로 HS코드 기반 요구사항 검색 (CompTox Chemicals Dashboard API 사용)"""
         print(f"    🌿 EPA API 검색: HS코드 {hs_code}")
         
         try:
-            # EPA Envirofacts API 사용
-            api_url = api_endpoints.get_endpoint("epa", "envirofacts", "chemical")
+            # EPA CompTox Chemicals Dashboard API 사용
+            api_url = api_endpoints.get_endpoint("epa", "chemicals", "search")
             english_name = self._translate_to_english(product_name)
             params = {
-                "search": english_name,
-                "format": "json",
-                "maxRows": 10
+                "searchTerm": english_name,
+                "limit": 10
             }
-            # EPA는 API 키가 필요하지 않음
+            
+            # EPA API 키가 필요한 경우 추가
+            if self.api_key:
+                params["api_key"] = self.api_key
             
             print(f"    📡 EPA API 호출: {api_url}")
             print(f"    🔍 검색 파라미터: {params}")
@@ -871,7 +873,7 @@ class DataGovAPIService:
             }
     
     async def _search_fcc_requirements(self, hs_code: str, product_name: str) -> Dict[str, Any]:
-        """FCC API로 HS코드 기반 요구사항 검색 (Device Authorization API 사용)"""
+        """FCC API로 HS코드 기반 요구사항 검색 (Device Authorization API 사용) - 재시도 로직 포함"""
         print(f"    📡 FCC API 검색: HS코드 {hs_code}")
         
         try:
@@ -888,9 +890,21 @@ class DataGovAPIService:
             print(f"    📡 FCC API 호출: {api_url}")
             print(f"    🔍 검색 파라미터: {params}")
             
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(api_url, params=params)
-                response.raise_for_status()
+            # 재시도 로직 (502 오류 대응)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        response = await client.get(api_url, params=params)
+                        response.raise_for_status()
+                        break
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 502 and attempt < max_retries - 1:
+                        print(f"    ⚠️ FCC API 502 오류, {attempt + 1}번째 재시도...")
+                        await asyncio.sleep(2 ** attempt)  # 지수 백오프
+                        continue
+                    else:
+                        raise
                 data = response.json()
                 
                 print(f"    📊 FCC API 응답: {len(data.get('results', []))}개 결과")
@@ -972,16 +986,16 @@ class DataGovAPIService:
         print(f"    🛃 CBP API 검색: HS코드 {hs_code}")
         
         try:
-            # CBP Trade Statistics API 사용
-            api_url = api_endpoints.get_endpoint("cbp", "trade_statistics", "imports")
+            # CBP Trade Statistics API 사용 (HS 코드 기반)
+            api_url = api_endpoints.get_endpoint("cbp", "trade_statistics", "hs_codes")
             params = {
                 "hs_code": hs_code,
                 "limit": 10,
                 "format": "json"
             }
             # CBP는 API 키가 필요할 수 있음
-            if self.api_keys.get("cbp"):
-                params["api_key"] = self.api_keys["cbp"]
+            if self.api_key:
+                params["api_key"] = self.api_key
             
             print(f"    📡 CBP API 호출 시도: {api_url}")
             print(f"    🔍 검색 파라미터: {params}")
@@ -1073,8 +1087,8 @@ class DataGovAPIService:
         print(f"    🛡️ CPSC API 검색: HS코드 {hs_code}")
         
         try:
-            # CPSC Recalls API 사용
-            api_url = api_endpoints.get_endpoint("cpsc", "recalls", "recalls")
+            # CPSC Recalls API 사용 (JSON 엔드포인트)
+            api_url = api_endpoints.get_endpoint("cpsc", "recalls", "json")
             english_name = self._translate_to_english(product_name)
             params = {
                 "search": english_name,
