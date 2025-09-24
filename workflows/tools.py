@@ -3,7 +3,16 @@ LangGraph Tools for Requirements Analysis
 특정 작업을 수행하는 도구들
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import asyncio
+import httpx
+from pathlib import Path
+import json
+from pypdf import PdfReader
+from io import BytesIO
+from datetime import datetime
+import importlib.util
+import sys
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
 from app.services.requirements.data_gov_api import DataGovAPIService
@@ -16,6 +25,28 @@ class RequirementsTools:
         self.search_service = TavilySearchService()
         self.web_scraper = WebScraper()
         self.data_gov_api = DataGovAPIService()
+        self.precedent_collector = self._init_cbp_collector()
+        self.references_store_path = Path("reference_links.json")
+    def _init_cbp_collector(self):
+        """precedents-analysis/cbp_scraper.py의 CBPDataCollector를 동적 로드한다."""
+        try:
+            base_dir = Path(__file__).resolve().parents[1]  # ai-engine/app
+            project_root = base_dir.parent  # ai-engine
+            target_path = project_root / "precedents-analysis" / "cbp_scraper.py"
+            if not target_path.exists():
+                return None
+            spec = importlib.util.spec_from_file_location("cbp_scraper", str(target_path))
+            if spec is None or spec.loader is None:
+                return None
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["cbp_scraper"] = module
+            spec.loader.exec_module(module)
+            if hasattr(module, "CBPDataCollector"):
+                return module.CBPDataCollector()
+        except Exception:
+            return None
+        return None
+
         
         # 기관별 도메인 매핑
         self.agency_domains = {
@@ -157,6 +188,71 @@ class RequirementsTools:
                 "documents": [],
                 "sources": []
             }
+
+    async def get_cbp_precedents(self, hs_code: str) -> Dict[str, Any]:
+        """CBP 판례/결정 사례 조회 도구."""
+        try:
+            if not self.precedent_collector:
+                return {"hs_code": hs_code, "count": 0, "precedents": [], "error": "cbp_collector_not_available"}
+            precedents = await self.precedent_collector.get_precedents_by_hs_code(hs_code)
+            return {
+                "hs_code": hs_code,
+                "count": len(precedents),
+                "precedents": precedents
+            }
+        except Exception as e:
+            return {"hs_code": hs_code, "count": 0, "precedents": [], "error": str(e)}
+
+    async def summarize_pdf(self, url: str, max_pages: int = 5) -> Dict[str, Any]:
+        """PDF 문서를 다운로드하여 앞부분을 요약(발췌)한다."""
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = BytesIO(resp.content)
+                reader = PdfReader(data)
+                num_pages = min(len(reader.pages), max_pages)
+                text_chunks: List[str] = []
+                for i in range(num_pages):
+                    try:
+                        text_chunks.append(reader.pages[i].extract_text() or "")
+                    except Exception:
+                        continue
+                combined = "\n".join([t.strip() for t in text_chunks if t and t.strip()])
+                preview = (combined[:1200] + "…") if len(combined) > 1200 else combined
+                return {
+                    "url": url,
+                    "pages_read": num_pages,
+                    "excerpt": preview,
+                    "char_count": len(preview)
+                }
+        except Exception as e:
+            return {"url": url, "error": str(e)}
+
+    def save_reference_links(self, hs_code: str, product_name: str, search_results: Dict[str, Any]) -> Dict[str, Any]:
+        """검색된 참고 링크들을 로컬 JSON에 저장/병합한다."""
+        try:
+            existing: Dict[str, Any] = {}
+            if self.references_store_path.exists():
+                existing = json.loads(self.references_store_path.read_text(encoding="utf-8"))
+            key = f"{hs_code}:{product_name}"
+            payload = {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "saved_at": datetime.utcnow().isoformat() + "Z",
+                "agencies": {}
+            }
+            for k, v in search_results.items():
+                agency = v.get("agency") or k
+                urls = v.get("urls", [])
+                payload["agencies"].setdefault(agency, {"urls": []})
+                # 병합
+                payload["agencies"][agency]["urls"] = list({*payload["agencies"][agency]["urls"], *urls})
+            existing[key] = payload
+            self.references_store_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"saved": True, "reference_key": key, "agencies": list(payload["agencies"].keys())}
+        except Exception as e:
+            return {"saved": False, "error": str(e)}
     
     async def analyze_requirements(self, requirements_data: Dict[str, Any]) -> Dict[str, Any]:
         """요구사항 분석 도구 (확장)"""

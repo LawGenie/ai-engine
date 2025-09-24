@@ -23,17 +23,21 @@ class RequirementsWorkflow:
         workflow = StateGraph(dict)
         
         # 노드 추가
+        workflow.add_node("extract_keywords", self.nodes.extract_core_keywords)
+        workflow.add_node("call_hybrid_api", self.nodes.call_hybrid_api)
         workflow.add_node("search_documents", self.nodes.search_agency_documents)
         workflow.add_node("scrape_documents", self.nodes.scrape_documents)
         workflow.add_node("consolidate_results", self.nodes.consolidate_results)
         
         # 엣지 정의
+        workflow.add_edge("extract_keywords", "call_hybrid_api")
+        workflow.add_edge("call_hybrid_api", "search_documents")
         workflow.add_edge("search_documents", "scrape_documents")
         workflow.add_edge("scrape_documents", "consolidate_results")
         workflow.add_edge("consolidate_results", END)
         
         # 시작점 설정
-        workflow.set_entry_point("search_documents")
+        workflow.set_entry_point("extract_keywords")
         
         return workflow.compile()
     
@@ -132,6 +136,8 @@ class RequirementsWorkflow:
                 sources=sources,
                 metadata=extended_metadata
             )
+
+            # 참고사례(판례) 및 저장된 참고 링크는 답변 본문/소스에 반영
             
             # HS코드 구분 정보 추가
             response.hs_code_8digit = hs_code_8digit

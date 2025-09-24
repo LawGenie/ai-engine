@@ -44,6 +44,9 @@ class RequirementAnalysisResponse(BaseModel):
     requirements: Requirements
     sources: List[Source]
     metadata: Metadata
+    hs_code_8digit: Optional[str] = None
+    hs_code_6digit: Optional[str] = None
+    agency_status: Optional[Dict[str, Any]] = None
 
 class RequirementAnalysisRequest(BaseModel):
     hs_code: str

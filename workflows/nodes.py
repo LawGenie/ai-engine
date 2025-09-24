@@ -4,6 +4,8 @@ LangGraph Nodes for Requirements Analysis
 """
 
 from typing import Dict, Any, List
+from .tools import RequirementsTools
+from app.services.requirements.keyword_extractor import KeywordExtractor, HfKeywordExtractor, OpenAiKeywordExtractor
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
 from app.models.requirement_models import RequirementAnalysisRequest
@@ -15,12 +17,61 @@ class RequirementsNodes:
     def __init__(self):
         self.search_service = TavilySearchService()
         self.web_scraper = WebScraper()
+        self.tools = RequirementsTools()
+        self.keyword_extractor = None
+        self.hf_extractor = None
+        self.openai_extractor = None
+
+    async def extract_core_keywords(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """상품명/설명에서 핵심 키워드 추출 (간단 휴리스틱).
+        - 영문/숫자만 남기고 분절
+        - 불용어 제거
+        - 길이 3 이상 단어 우선, 상위 3개 반환
+        - 한글일 경우 간단 매핑 시도
+        """
+        request = state["request"]
+        name = (request.product_name or "").strip()
+        desc = (request.product_description or "").strip()
+        # HF 추출기 시도 → 실패 시 휴리스틱
+        if self.hf_extractor is None:
+            try:
+                self.hf_extractor = HfKeywordExtractor()
+            except Exception:
+                self.hf_extractor = None
+        if self.keyword_extractor is None:
+            self.keyword_extractor = KeywordExtractor()
+        if self.openai_extractor is None:
+            try:
+                self.openai_extractor = OpenAiKeywordExtractor()
+            except Exception:
+                self.openai_extractor = None
+
+        core_keywords = []
+        try:
+            # OpenAI 우선(플래그 활성 시) → HF → 휴리스틱
+            if self.openai_extractor:
+                core_keywords = self.openai_extractor.extract(name, desc, top_k=3)
+        except Exception:
+            core_keywords = []
+        try:
+            if self.hf_extractor:
+                core_keywords = self.hf_extractor.extract(name, desc, top_k=3)
+        except Exception:
+            core_keywords = []
+        if not core_keywords:
+            core_keywords = self.keyword_extractor.extract(name, desc, top_k=3)
+        state["core_keywords"] = core_keywords
+        print(f"\n🔎 [NODE] 핵심 키워드: {core_keywords}")
+        state["next_action"] = "call_hybrid_api"
+        return state
     
     async def search_agency_documents(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """기관별 문서 검색 노드"""
         request = state["request"]
         hs_code = request.hs_code
         product_name = request.product_name
+        keywords = state.get("core_keywords") or []
+        query_term = (keywords[0] if keywords else product_name) or ""
         
         print(f"\n🔍 [NODE] 기관별 문서 검색 시작")
         print(f"  📋 HS코드: {hs_code}")
@@ -51,28 +102,28 @@ class RequirementsNodes:
         
         # 8자리 HS코드 검색 (정확)
         search_queries.update({
-            f"FDA_8digit": f"site:fda.gov import requirements {product_name} HS {hs_code_8digit}",
-            f"FCC_8digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_8digit}",
-            f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {product_name}",
-            f"USDA_8digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_8digit}",
-            f"EPA_8digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_8digit}",
-            f"CPSC_8digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_8digit}",
-            f"KCS_8digit": f"site:customs.go.kr Korea customs import requirements {product_name} HS {hs_code_8digit}",
-            f"MFDS_8digit": f"site:mfds.go.kr food drug safety import {product_name} HS {hs_code_8digit}",
-            f"MOTIE_8digit": f"site:motie.go.kr trade policy import requirements {product_name} HS {hs_code_8digit}"
+            f"FDA_8digit": f"site:fda.gov import requirements {query_term} HS {hs_code_8digit}",
+            f"FCC_8digit": f"site:fcc.gov device authorization requirements {query_term} HS {hs_code_8digit}",
+            f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {query_term}",
+            f"USDA_8digit": f"site:usda.gov agricultural import requirements {query_term} HS {hs_code_8digit}",
+            f"EPA_8digit": f"site:epa.gov environmental regulations {query_term} HS {hs_code_8digit}",
+            f"CPSC_8digit": f"site:cpsc.gov consumer product safety {query_term} HS {hs_code_8digit}",
+            f"KCS_8digit": f"site:customs.go.kr Korea customs import requirements {query_term} HS {hs_code_8digit}",
+            f"MFDS_8digit": f"site:mfds.go.kr food drug safety import {query_term} HS {hs_code_8digit}",
+            f"MOTIE_8digit": f"site:motie.go.kr trade policy import requirements {query_term} HS {hs_code_8digit}"
         })
         
         # 6자리 HS코드 검색 (유사)
         search_queries.update({
-            f"FDA_6digit": f"site:fda.gov import requirements {product_name} HS {hs_code_6digit}",
-            f"FCC_6digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_6digit}",
-            f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {product_name}",
-            f"USDA_6digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_6digit}",
-            f"EPA_6digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_6digit}",
-            f"CPSC_6digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_6digit}",
-            f"KCS_6digit": f"site:customs.go.kr Korea customs import requirements {product_name} HS {hs_code_6digit}",
-            f"MFDS_6digit": f"site:mfds.go.kr food drug safety import {product_name} HS {hs_code_6digit}",
-            f"MOTIE_6digit": f"site:motie.go.kr trade policy import requirements {product_name} HS {hs_code_6digit}"
+            f"FDA_6digit": f"site:fda.gov import requirements {query_term} HS {hs_code_6digit}",
+            f"FCC_6digit": f"site:fcc.gov device authorization requirements {query_term} HS {hs_code_6digit}",
+            f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {query_term}",
+            f"USDA_6digit": f"site:usda.gov agricultural import requirements {query_term} HS {hs_code_6digit}",
+            f"EPA_6digit": f"site:epa.gov environmental regulations {query_term} HS {hs_code_6digit}",
+            f"CPSC_6digit": f"site:cpsc.gov consumer product safety {query_term} HS {hs_code_6digit}",
+            f"KCS_6digit": f"site:customs.go.kr Korea customs import requirements {query_term} HS {hs_code_6digit}",
+            f"MFDS_6digit": f"site:mfds.go.kr food drug safety import {query_term} HS {hs_code_6digit}",
+            f"MOTIE_6digit": f"site:motie.go.kr trade policy import requirements {query_term} HS {hs_code_6digit}"
         })
         
         search_results = {}
@@ -119,11 +170,35 @@ class RequirementsNodes:
                 "agency": agency.split("_")[0]  # FDA_8digit -> FDA
             }
         
-        print(f"\n📋 [NODE] 검색 완료 - {len([r for r in search_results.values() if r['url']])}개 URL 발견")
+        # 요약 카운트: 하나 이상의 URL 보유한 항목 수
+        found_count = sum(1 for v in search_results.values() if v.get("urls"))
+        print(f"\n📋 [NODE] 검색 완료 - {found_count}개 URL 세트 발견")
         
         # 상태 업데이트 (기존 상태 유지)
         state["search_results"] = search_results
+        # 참고 링크 저장
+        request = state["request"]
+        save_meta = self.tools.save_reference_links(request.hs_code, request.product_name, search_results)
+        state["references_saved"] = save_meta
         state["next_action"] = "scrape_documents"
+        return state
+
+    async def call_hybrid_api(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """하이브리드 API 호출 노드 (Data.gov/USDA/EPA + 웹 검색 통합)."""
+        request = state["request"]
+        hs_code = request.hs_code
+        product_name = request.product_name
+        keywords = state.get("core_keywords") or []
+        query_term = (keywords[0] if keywords else product_name) or ""
+        print(f"\n📡 [NODE] 하이브리드 API 호출 시작: {hs_code} / {product_name}")
+        try:
+            hybrid = await self.tools.search_requirements_hybrid(hs_code, query_term)
+            state["hybrid_result"] = hybrid
+            state["next_action"] = "scrape_documents"
+        except Exception as e:
+            print(f"  ❌ 하이브리드 호출 실패: {e}")
+            state["hybrid_result"] = {"error": str(e)}
+            state["next_action"] = "scrape_documents"
         return state
     
     async def scrape_documents(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -291,11 +366,31 @@ class RequirementsNodes:
         print(f"  📄 총 필요서류: {len(all_documents)}개")
         print(f"  📚 총 출처: {len(all_sources)}개")
         
+        # 참고: CBP 판례 수집 추가
+        request = state.get("request")
+        cbp = None
+        if request:
+            try:
+                cbp = await self.tools.get_cbp_precedents(request.hs_code)
+            except Exception:
+                cbp = {"error": "precedent_fetch_failed"}
+
+        # 하이브리드(API+웹) 결과도 통합
+        hybrid = state.get("hybrid_result") or {}
+        if hybrid and not hybrid.get("error"):
+            combined = hybrid.get("combined_results", {})
+            if combined:
+                all_certifications.extend(combined.get("certifications", []))
+                all_documents.extend(combined.get("documents", []))
+                all_sources.extend(combined.get("sources", []))
+
         # 상태 업데이트 (기존 상태 유지)
         state["consolidated_results"] = {
             "certifications": all_certifications,
             "documents": all_documents,
-            "sources": all_sources
+            "sources": all_sources,
+            "precedents": cbp.get("precedents", []) if cbp else []
         }
+        state["precedents_meta"] = cbp
         state["next_action"] = "complete"
         return state
