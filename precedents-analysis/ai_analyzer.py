@@ -1,4 +1,4 @@
-import openai
+from openai import OpenAI
 import json
 import logging
 from typing import List, Dict, Any
@@ -22,7 +22,7 @@ class PrecedentsAnalyzer:
             logger.error("2. 환경변수로 export OPENAI_API_KEY='your-key-here'")
             raise ValueError("OpenAI API key not configured")
         
-        openai.api_key = self.api_key
+        self.client = OpenAI(api_key=self.api_key)
         self.model = "gpt-4o-mini"
     
     async def analyze_precedents(self, product_data: Dict[str, Any], cbp_data: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -36,7 +36,7 @@ class PrecedentsAnalyzer:
             prompt = self._create_analysis_prompt(product_data, cbp_data)
             
             # 2. GPT-4o-mini API 호출
-            response = await openai.ChatCompletion.acreate(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
