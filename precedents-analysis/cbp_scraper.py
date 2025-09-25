@@ -38,8 +38,8 @@ class CBPDataCollector:
             'Upgrade-Insecure-Requests': '1'
         }
         
-        # 실제 데이터베이스 매핑 (HS코드별 실제 사례들)
-        self.real_precedents_db = self._load_real_precedents_database()
+        # 가짜 데이터 제거 - 실제 CBP 데이터만 사용
+        self.real_precedents_db = {}  # 가짜 데이터 제거
     
     def _load_real_precedents_database(self) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -117,7 +117,7 @@ class CBPDataCollector:
             all_precedents = []
             
             # 1. 실제 데이터베이스에서 데이터 가져오기
-            db_data = self.real_precedents_db.get(hs_code, [])
+            db_data = []  # 가짜 데이터 완전 제거
             all_precedents.extend(db_data)
             
             # 2. 웹 스크래핑 시도 (실패해도 계속 진행)
