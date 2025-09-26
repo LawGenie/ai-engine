@@ -85,9 +85,25 @@ class RequirementsTools:
         # HS 코드 기반 기관 매핑
         self.hs_code_agency_mapping = self._build_hs_code_mapping()
             
-        self.web_scraper = WebScraper()
-        self.data_gov_api = DataGovAPIService()
-        self.precedent_collector = self._init_cbp_collector()
+        # API 키 예외 처리
+        try:
+            self.web_scraper = WebScraper()
+        except Exception as e:
+            print(f"⚠️ WebScraper 초기화 실패: {e}")
+            self.web_scraper = None
+        
+        try:
+            self.data_gov_api = DataGovAPIService()
+        except Exception as e:
+            print(f"⚠️ DataGovAPIService 초기화 실패: {e}")
+            self.data_gov_api = None
+        
+        try:
+            self.precedent_collector = self._init_cbp_collector()
+        except Exception as e:
+            print(f"⚠️ CBP Collector 초기화 실패: {e}")
+            self.precedent_collector = None
+        
         self.references_store_path = Path("reference_links.json")
     def _build_hs_code_mapping(self) -> Dict[str, Dict[str, Any]]:
         """HS 코드 기반 정부기관 매핑 구축"""
@@ -686,7 +702,11 @@ class RequirementsTools:
             web_results = {}
             for query_key, query in web_queries.items():
                 try:
-                    search_results = await self.search_provider.search(query, max_results=5)
+                    if self.search_provider:
+                        search_results = await self.search_provider.search(query, max_results=5)
+                    else:
+                        print(f"    ⚠️ 검색 프로바이더 없음: {query_key} 스킵됨")
+                        search_results = []
                     # 결과 분류 (HS 코드 기반 + 키워드 기반)
                     category = "basic_requirements"
                     search_type = "hs_code" if "hs_" in query_key else "keyword"

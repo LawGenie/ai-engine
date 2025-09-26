@@ -207,15 +207,17 @@ class RequirementsNodes:
         return state
 
     async def call_hybrid_api(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """하이브리드 API 호출 노드 (Data.gov/USDA/EPA + 웹 검색 통합)."""
+        """하이브리드 API 호출 노드 (Data.gov/USDA/EPA + 웹 검색 통합 + Phase 2-4)."""
         request = state["request"]
         hs_code = request.hs_code
         product_name = request.product_name
+        product_description = request.product_description or ""
         keywords = state.get("core_keywords") or []
         query_term = (keywords[0] if keywords else product_name) or ""
         print(f"\n📡 [NODE] 하이브리드 API 호출 시작: {hs_code} / {product_name}")
         try:
-            hybrid = await self.tools.search_requirements_hybrid(hs_code, query_term)
+            # Phase 2-4 포함된 하이브리드 검색
+            hybrid = await self.tools.search_requirements_hybrid(hs_code, query_term, product_description)
             state["hybrid_result"] = hybrid
             state["next_action"] = "scrape_documents"
         except Exception as e:
@@ -398,7 +400,7 @@ class RequirementsNodes:
             except Exception:
                 cbp = {"error": "precedent_fetch_failed"}
 
-        # 하이브리드(API+웹) 결과도 통합
+        # 하이브리드(API+웹) 결과도 통합 (Phase 2-4 포함)
         hybrid = state.get("hybrid_result") or {}
         if hybrid and not hybrid.get("error"):
             combined = hybrid.get("combined_results", {})
@@ -406,6 +408,12 @@ class RequirementsNodes:
                 all_certifications.extend(combined.get("certifications", []))
                 all_documents.extend(combined.get("documents", []))
                 all_sources.extend(combined.get("sources", []))
+                
+                # Phase 2-4 결과 통합
+                print(f"  📊 Phase 2-4 결과 통합:")
+                print(f"    🧪 검사 절차: {len(combined.get('testing_procedures', []))}개")
+                print(f"    ⚖️ 처벌 정보: {len(combined.get('penalties_enforcement', []))}개")
+                print(f"    ⏰ 유효기간: {len(combined.get('validity_periods', []))}개")
 
         # 상태 업데이트 (기존 상태 유지)
         state["consolidated_results"] = {
