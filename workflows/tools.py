@@ -82,10 +82,225 @@ class RequirementsTools:
         if search_provider:
             self.search_provider = search_provider
             
+        # HS 코드 기반 기관 매핑
+        self.hs_code_agency_mapping = self._build_hs_code_mapping()
+            
         self.web_scraper = WebScraper()
         self.data_gov_api = DataGovAPIService()
         self.precedent_collector = self._init_cbp_collector()
         self.references_store_path = Path("reference_links.json")
+    def _build_hs_code_mapping(self) -> Dict[str, Dict[str, Any]]:
+        """HS 코드 기반 정부기관 매핑 구축"""
+        return {
+            # 화장품 및 미용 제품 (33xx)
+                    "3304": {
+                        "primary_agencies": ["FDA", "CPSC"],
+                        "secondary_agencies": ["FTC"],
+                        "search_keywords": ["cosmetic", "skincare", "beauty", "serum", "cream"],
+                        "requirements": ["cosmetic registration", "ingredient safety", "labeling compliance", "consumer safety"]
+                    },
+            "3307": {
+                "primary_agencies": ["FDA"],
+                "secondary_agencies": ["DOT"],  # 운송 관련 (알코올 함유)
+                "search_keywords": ["perfume", "toilet water", "fragrance", "alcohol"],
+                "requirements": ["cosmetic registration", "alcohol content", "shipping requirements"]
+            },
+            
+            # 식품 및 건강보조식품 (21xx, 19xx, 20xx)
+            "2106": {
+                "primary_agencies": ["FDA"],
+                "secondary_agencies": ["USDA"],
+                "search_keywords": ["dietary supplement", "ginseng", "extract", "health"],
+                "requirements": ["prior notice", "DSHEA compliance", "cGMP", "health claims"]
+            },
+            "1904": {
+                "primary_agencies": ["FDA"],
+                "secondary_agencies": ["USDA"],
+                "search_keywords": ["rice", "cereal", "prepared food", "instant"],
+                "requirements": ["prior notice", "nutritional labeling", "allergen declaration"]
+            },
+            "1905": {
+                "primary_agencies": ["FDA"],
+                "secondary_agencies": ["USDA"],
+                "search_keywords": ["snack", "cracker", "cookie", "baker"],
+                "requirements": ["prior notice", "nutritional labeling", "FALCPA", "inspection"]
+            },
+            "1902": {
+                "primary_agencies": ["FDA"],
+                "secondary_agencies": ["USDA"],
+                "search_keywords": ["pasta", "noodle", "instant", "ramen"],
+                "requirements": ["prior notice", "nutritional labeling", "allergen", "sodium"]
+            },
+            "2005": {
+                "primary_agencies": ["FDA"],
+                "secondary_agencies": ["USDA"],
+                "search_keywords": ["vegetable", "kimchi", "fermented", "preserved"],
+                "requirements": ["prior notice", "HARPC", "acidified foods", "refrigeration"]
+            },
+            
+            # 전자제품 및 통신 (84xx, 85xx)
+            "8471": {
+                "primary_agencies": ["FCC"],
+                "secondary_agencies": ["CPSC"],
+                "search_keywords": ["computer", "electronic", "device", "equipment"],
+                "requirements": ["device authorization", "EMC", "safety standards"]
+            },
+            "8517": {
+                "primary_agencies": ["FCC"],
+                "secondary_agencies": ["CPSC"],
+                "search_keywords": ["telephone", "communication", "wireless", "radio"],
+                "requirements": ["equipment authorization", "radio frequency", "EMC"]
+            },
+            
+            # 의류 및 섬유 (61xx, 62xx)
+            "6109": {
+                "primary_agencies": ["CPSC"],
+                "secondary_agencies": ["FTC"],
+                "search_keywords": ["t-shirt", "clothing", "textile", "garment"],
+                "requirements": ["flammability", "care labeling", "fiber content"]
+            },
+            
+            # 장난감 및 어린이 제품 (95xx)
+            "9503": {
+                "primary_agencies": ["CPSC"],
+                "secondary_agencies": ["FDA"],
+                "search_keywords": ["toy", "children", "play", "game"],
+                "requirements": ["safety standards", "lead content", "small parts", "age grading"]
+            }
+        }
+
+    def _get_target_agencies_for_hs_code(self, hs_code: str) -> Dict[str, Any]:
+        """HS 코드를 기반으로 타겟 기관 및 검색 전략 반환"""
+        # HS 코드에서 4자리 코드 추출
+        hs_4digit = hs_code.split('.')[0] if '.' in hs_code else hs_code[:4]
+        
+        # 매핑에서 해당 코드 찾기
+        mapping = self.hs_code_agency_mapping.get(hs_4digit, {})
+        
+        if not mapping:
+            # 기본 매핑 (모든 기관 검색)
+            return {
+                "primary_agencies": ["FDA", "USDA", "EPA", "FCC", "CPSC"],
+                "secondary_agencies": [],
+                "search_keywords": [],
+                "requirements": [],
+                "confidence": 0.3
+            }
+        
+        return {
+            **mapping,
+            "confidence": 0.9
+        }
+
+    def _extract_keywords_from_product(self, product_name: str, product_description: str = "") -> List[str]:
+        """상품명과 설명에서 핵심 키워드 추출"""
+        keywords = []
+        
+        # 상품명에서 키워드 추출
+        name_keywords = [
+            "vitamin", "serum", "cream", "extract", "ginseng", "rice", "noodle", 
+            "kimchi", "snack", "perfume", "cosmetic", "supplement", "food",
+            "electronic", "device", "toy", "clothing", "textile"
+        ]
+        
+        product_text = f"{product_name} {product_description}".lower()
+        for keyword in name_keywords:
+            if keyword in product_text:
+                keywords.append(keyword)
+        
+        # 상품명에서 직접 추출
+        words = product_name.lower().split()
+        for word in words:
+            if len(word) > 3 and word not in ["premium", "korean", "instant", "pack"]:
+                keywords.append(word)
+        
+        return list(set(keywords))  # 중복 제거
+
+    def _build_hs_code_based_queries(self, product_name: str, hs_code: str, target_agencies: Dict[str, Any]) -> Dict[str, str]:
+        """HS 코드 기반 기본 검색 쿼리 생성"""
+        queries = {}
+        
+        # 주요 기관별 검색 (HS 코드 기반)
+        for agency in target_agencies.get("primary_agencies", []):
+            agency_lower = agency.lower()
+            
+            # 기본 요구사항 검색
+            queries[f"{agency}_hs_requirements"] = f"site:{agency_lower}.gov import requirements {product_name} HS {hs_code}"
+            
+            # 세부 규정 검색 (기관별 특화)
+            if agency == "FDA":
+                if "cosmetic" in target_agencies.get("search_keywords", []):
+                    queries[f"{agency}_hs_cosmetic"] = f"site:{agency_lower}.gov cosmetic regulations HS {hs_code} ingredient safety"
+                if "food" in target_agencies.get("search_keywords", []):
+                    queries[f"{agency}_hs_food"] = f"site:{agency_lower}.gov food import requirements HS {hs_code} prior notice"
+                if "supplement" in target_agencies.get("search_keywords", []):
+                    queries[f"{agency}_hs_supplement"] = f"site:{agency_lower}.gov dietary supplement requirements HS {hs_code} DSHEA"
+            
+            elif agency == "USDA":
+                queries[f"{agency}_hs_agricultural"] = f"site:{agency_lower}.gov agricultural import requirements HS {hs_code}"
+                queries[f"{agency}_hs_organic"] = f"site:{agency_lower}.gov organic certification HS {hs_code}"
+            
+            elif agency == "EPA":
+                queries[f"{agency}_hs_chemical"] = f"site:{agency_lower}.gov chemical regulations HS {hs_code}"
+                queries[f"{agency}_hs_environmental"] = f"site:{agency_lower}.gov environmental standards HS {hs_code}"
+            
+            elif agency == "FCC":
+                queries[f"{agency}_hs_device"] = f"site:{agency_lower}.gov device authorization HS {hs_code}"
+                queries[f"{agency}_hs_emc"] = f"site:{agency_lower}.gov EMC electromagnetic compatibility HS {hs_code}"
+            
+            elif agency == "CPSC":
+                queries[f"{agency}_hs_safety"] = f"site:{agency_lower}.gov safety standards HS {hs_code}"
+                queries[f"{agency}_hs_recall"] = f"site:{agency_lower}.gov recall information HS {hs_code}"
+        
+        return queries
+
+    def _build_keyword_based_queries(self, product_name: str, keywords: List[str], target_agencies: Dict[str, Any]) -> Dict[str, str]:
+        """키워드 기반 추가 검색 쿼리 생성"""
+        queries = {}
+        
+        # 주요 기관별 키워드 검색
+        for agency in target_agencies.get("primary_agencies", []):
+            agency_lower = agency.lower()
+            
+            for keyword in keywords[:3]:  # 상위 3개 키워드만 사용
+                # 키워드별 특화 검색
+                if keyword in ["vitamin", "serum", "cream", "cosmetic"]:
+                    queries[f"{agency}_kw_{keyword}"] = f"site:{agency_lower}.gov cosmetic regulations {keyword} import requirements"
+                elif keyword in ["ginseng", "extract", "supplement"]:
+                    queries[f"{agency}_kw_{keyword}"] = f"site:{agency_lower}.gov dietary supplement {keyword} import requirements"
+                elif keyword in ["rice", "noodle", "kimchi", "food"]:
+                    queries[f"{agency}_kw_{keyword}"] = f"site:{agency_lower}.gov food import requirements {keyword}"
+                elif keyword in ["electronic", "device"]:
+                    queries[f"{agency}_kw_{keyword}"] = f"site:{agency_lower}.gov device authorization {keyword}"
+                elif keyword in ["toy", "clothing", "textile"]:
+                    queries[f"{agency}_kw_{keyword}"] = f"site:{agency_lower}.gov safety standards {keyword}"
+        
+        return queries
+
+    def _build_phase_specific_queries(self, product_name: str, hs_code: str, target_agencies: Dict[str, Any]) -> Dict[str, str]:
+        """Phase 2-4 전용 검색 쿼리 생성"""
+        queries = {}
+        
+        for agency in target_agencies.get("primary_agencies", []):
+            agency_lower = agency.lower()
+            
+            # Phase 2: 검사 절차 및 방법
+            queries[f"{agency}_phase2_testing"] = f"site:{agency_lower}.gov testing procedures {product_name} HS {hs_code}"
+            queries[f"{agency}_phase2_inspection"] = f"site:{agency_lower}.gov inspection methods {product_name} HS {hs_code}"
+            queries[f"{agency}_phase2_authorization"] = f"site:{agency_lower}.gov authorization procedures {product_name} HS {hs_code}"
+            
+            # Phase 3: 처벌 및 벌금 정보
+            queries[f"{agency}_phase3_penalties"] = f"site:{agency_lower}.gov penalties violations {product_name} HS {hs_code}"
+            queries[f"{agency}_phase3_enforcement"] = f"site:{agency_lower}.gov enforcement actions {product_name} HS {hs_code}"
+            queries[f"{agency}_phase3_fines"] = f"site:{agency_lower}.gov civil penalties {product_name} HS {hs_code}"
+            
+            # Phase 4: 유효기간 및 갱신 정보
+            queries[f"{agency}_phase4_validity"] = f"site:{agency_lower}.gov certificate validity period {product_name} HS {hs_code}"
+            queries[f"{agency}_phase4_renewal"] = f"site:{agency_lower}.gov certification renewal {product_name} HS {hs_code}"
+            queries[f"{agency}_phase4_duration"] = f"site:{agency_lower}.gov permit duration {product_name} HS {hs_code}"
+        
+        return queries
+
     def _init_cbp_collector(self):
         """precedents-analysis/cbp_scraper.py의 CBPDataCollector를 동적 로드한다."""
         try:
@@ -414,7 +629,7 @@ class RequirementsTools:
             "analysis_complete": True
         }
     
-    async def search_requirements_hybrid(self, hs_code: str, product_name: str) -> Dict[str, Any]:
+    async def search_requirements_hybrid(self, hs_code: str, product_name: str, product_description: str = "") -> Dict[str, Any]:
         """하이브리드 검색: Data.gov API + Tavily Search"""
         print(f"\n🚀 [HYBRID] 하이브리드 검색 시작")
         print(f"  📋 HS코드: {hs_code}")
@@ -441,38 +656,63 @@ class RequirementsTools:
             print(f"    ❌ API 검색 실패: {e}")
             results["api_results"] = {"error": str(e)}
         
-        # 2. Tavily Search (웹 검색)
+        # 2. Tavily Search (HS 코드 기반 + 키워드 기반 복합 검색)
         try:
-            print(f"\n  🔍 2단계: Tavily Search 웹 검색")
-            # 8자리와 6자리 HS코드로 검색
-            hs_code_8digit = hs_code
-            hs_code_6digit = ".".join(hs_code.split(".")[:2]) if "." in hs_code else hs_code
+            print(f"\n  🔍 2단계: HS 코드 기반 + 키워드 기반 복합 검색")
             
-            web_queries = {
-                f"FDA_8digit": f"site:fda.gov import requirements {product_name} HS {hs_code_8digit}",
-                f"USDA_8digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_8digit}",
-                f"EPA_8digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_8digit}",
-                f"FCC_8digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_8digit}",
-                f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {product_name}",
-                f"CPSC_8digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_8digit}",
-                f"FDA_6digit": f"site:fda.gov import requirements {product_name} HS {hs_code_6digit}",
-                f"USDA_6digit": f"site:usda.gov agricultural import requirements {product_name} HS {hs_code_6digit}",
-                f"EPA_6digit": f"site:epa.gov environmental regulations {product_name} HS {hs_code_6digit}",
-                f"FCC_6digit": f"site:fcc.gov device authorization requirements {product_name} HS {hs_code_6digit}",
-                f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {product_name}",
-                f"CPSC_6digit": f"site:cpsc.gov consumer product safety {product_name} HS {hs_code_6digit}"
-            }
+            # HS 코드 기반 타겟 기관 분석
+            target_agencies = self._get_target_agencies_for_hs_code(hs_code)
+            
+            # 상품명/설명에서 키워드 추출
+            keywords = self._extract_keywords_from_product(product_name, product_description)
+            
+            # HS 코드 기반 기본 검색 쿼리 생성
+            hs_queries = self._build_hs_code_based_queries(product_name, hs_code, target_agencies)
+            
+            # 키워드 기반 추가 검색 쿼리 생성
+            keyword_queries = self._build_keyword_based_queries(product_name, keywords, target_agencies)
+            
+            # Phase 2-4 전용 검색 쿼리 생성
+            phase_queries = self._build_phase_specific_queries(product_name, hs_code, target_agencies)
+            
+            # 복합 검색 쿼리 병합
+            web_queries = {**hs_queries, **keyword_queries, **phase_queries}
+            
+            print(f"  🎯 타겟 기관: {', '.join(target_agencies.get('primary_agencies', []))}")
+            print(f"  📊 검색 신뢰도: {target_agencies.get('confidence', 0):.1%}")
+            print(f"  🔑 추출된 키워드: {', '.join(keywords[:5])}")
+            print(f"  🔍 총 검색 쿼리: {len(web_queries)}개 (HS코드 {len(hs_queries)}개 + 키워드 {len(keyword_queries)}개 + Phase2-4 {len(phase_queries)}개)")
             
             web_results = {}
             for query_key, query in web_queries.items():
                 try:
                     search_results = await self.search_provider.search(query, max_results=5)
+                    # 결과 분류 (HS 코드 기반 + 키워드 기반)
+                    category = "basic_requirements"
+                    search_type = "hs_code" if "hs_" in query_key else "keyword"
+                    
+                    # 쿼리 키워드 기반 카테고리 분류 (Phase 1-4)
+                    if any(keyword in query_key for keyword in ["cosmetic", "regulations", "standards", "limits", "restrictions", "safety"]):
+                        category = "detailed_regulations"
+                    elif any(keyword in query_key for keyword in ["testing", "inspection", "procedures", "authorization", "phase2"]):
+                        category = "testing_procedures"
+                    elif any(keyword in query_key for keyword in ["penalties", "enforcement", "violations", "recall", "phase3"]):
+                        category = "penalties_enforcement"
+                    elif any(keyword in query_key for keyword in ["validity", "renewal", "duration", "period", "phase4"]):
+                        category = "validity_periods"
+                    
+                    # 기관 추출
+                    agency = query_key.split("_")[0].upper()
+                    
                     web_results[query_key] = {
                         "query": query,
                         "results": search_results,
                         "urls": [r.get("url") for r in search_results if r.get("url")],
-                        "hs_code_type": "8digit" if "8digit" in query_key else "6digit",
-                        "agency": query_key.split("_")[0]
+                        "agency": agency,
+                        "category": category,
+                        "search_type": search_type,
+                        "result_count": len(search_results),
+                        "target_confidence": target_agencies.get("confidence", 0.5)
                     }
                 except Exception as e:
                     web_results[query_key] = {"error": str(e)}
@@ -488,29 +728,160 @@ class RequirementsTools:
         # 3. 결과 통합
         print(f"\n  🔄 3단계: 결과 통합")
         combined_results = self._combine_search_results(results["api_results"], results["web_results"])
+        combined_results["target_agencies"] = target_agencies  # 타겟 기관 정보 추가
+        combined_results["extracted_keywords"] = keywords  # 추출된 키워드 정보 추가
         results["combined_results"] = combined_results
         
-        print(f"\n✅ [HYBRID] 검색 완료")
+        print(f"\n✅ [HS 코드 + 키워드 복합 검색] 완료")
         print(f"  🔍 검색 방법: {', '.join(results['search_methods'])}")
+        print(f"  🎯 타겟 기관: {', '.join(target_agencies.get('primary_agencies', []))}")
+        print(f"  📊 검색 신뢰도: {target_agencies.get('confidence', 0):.1%}")
+        print(f"  🔑 추출된 키워드: {', '.join(keywords[:5])}")
         print(f"  📋 총 요구사항: {combined_results.get('total_requirements', 0)}개")
         print(f"  🏆 인증요건: {combined_results.get('total_certifications', 0)}개")
         print(f"  📄 필요서류: {combined_results.get('total_documents', 0)}개")
         
+        # 카테고리별 결과 출력
+        category_stats = combined_results.get('category_stats', {})
+        print(f"  📊 카테고리별 검색 결과:")
+        print(f"    🔍 기본 요구사항: {category_stats.get('basic_requirements', 0)}개")
+        print(f"    📋 세부 규정: {category_stats.get('detailed_regulations', 0)}개")
+        print(f"    🧪 검사 절차: {category_stats.get('testing_procedures', 0)}개")
+        print(f"    ⚖️ 처벌 정보: {category_stats.get('penalties_enforcement', 0)}개")
+        print(f"    ⏰ 유효기간: {category_stats.get('validity_periods', 0)}개")
+        
         return results
     
+    def _extract_requirements_from_web_results(self, web_results: Dict[str, Any]) -> Dict[str, Any]:
+        """웹 검색 결과에서 요구사항 추출"""
+        extracted_requirements = {
+            "certifications": [],
+            "documents": [],
+            "sources": [],
+            "detailed_regulations": [],
+            "testing_procedures": [],
+            "penalties_enforcement": [],
+            "validity_periods": []
+        }
+        
+        for query_key, result in web_results.items():
+            if "error" in result:
+                continue
+                
+            agency = result.get("agency", "Unknown")
+            category = result.get("category", "basic_requirements")
+            search_results = result.get("results", [])
+            
+            for search_result in search_results:
+                url = search_result.get("url", "")
+                title = search_result.get("title", "")
+                content = search_result.get("content", "")
+                score = search_result.get("score", 0)
+                
+                # 공식 사이트 vs 기타 사이트 구분
+                is_official = any(domain in url for domain in [".gov", ".fda.gov", ".usda.gov", ".epa.gov", ".fcc.gov", ".cbp.gov", ".cpsc.gov"])
+                source_type = "공식 사이트" if is_official else "기타 사이트"
+                
+                # 신뢰도 계산 (공식 사이트는 높은 점수)
+                confidence = score * (1.2 if is_official else 0.8)
+                
+                # 카테고리별 요구사항 추출
+                if category == "basic_requirements":
+                    # 기본 요구사항: import, requirements, regulations 등이 포함된 경우
+                    if any(keyword in content.lower() for keyword in ["import", "requirements", "regulations", "compliance", "standards"]):
+                        extracted_requirements["certifications"].append({
+                            "name": f"{agency} 수입 요구사항 ({title[:50]}...)",
+                            "required": True,
+                            "description": f"{source_type}에서 확인된 {agency} 수입 요구사항",
+                            "agency": agency,
+                            "url": url,
+                            "confidence": confidence,
+                            "source_type": source_type
+                        })
+                
+                elif category == "detailed_regulations":
+                    if any(keyword in content.lower() for keyword in ["regulation", "standard", "limit", "restriction"]):
+                        extracted_requirements["detailed_regulations"].append({
+                            "name": f"{agency} 세부 규정 ({title[:50]}...)",
+                            "description": f"{source_type}에서 확인된 {agency} 세부 규정",
+                            "agency": agency,
+                            "url": url,
+                            "confidence": confidence,
+                            "source_type": source_type
+                        })
+                
+                elif category == "testing_procedures":
+                    if any(keyword in content.lower() for keyword in ["test", "inspection", "procedure", "authorization"]):
+                        extracted_requirements["testing_procedures"].append({
+                            "name": f"{agency} 검사 절차 ({title[:50]}...)",
+                            "description": f"{source_type}에서 확인된 {agency} 검사 절차",
+                            "agency": agency,
+                            "url": url,
+                            "confidence": confidence,
+                            "source_type": source_type
+                        })
+                
+                elif category == "penalties_enforcement":
+                    if any(keyword in content.lower() for keyword in ["penalty", "enforcement", "violation", "fine"]):
+                        extracted_requirements["penalties_enforcement"].append({
+                            "name": f"{agency} 처벌 정보 ({title[:50]}...)",
+                            "description": f"{source_type}에서 확인된 {agency} 처벌 정보",
+                            "agency": agency,
+                            "url": url,
+                            "confidence": confidence,
+                            "source_type": source_type
+                        })
+                
+                elif category == "validity_periods":
+                    if any(keyword in content.lower() for keyword in ["validity", "renewal", "duration", "period"]):
+                        extracted_requirements["validity_periods"].append({
+                            "name": f"{agency} 유효기간 ({title[:50]}...)",
+                            "description": f"{source_type}에서 확인된 {agency} 유효기간 정보",
+                            "agency": agency,
+                            "url": url,
+                            "confidence": confidence,
+                            "source_type": source_type
+                        })
+                
+                # 출처 정보 추가
+                extracted_requirements["sources"].append({
+                    "title": title,
+                    "url": url,
+                    "type": source_type,
+                    "relevance": "high" if confidence > 0.7 else "medium" if confidence > 0.5 else "low",
+                    "agency": agency,
+                    "category": category
+                })
+        
+        return extracted_requirements
+
     def _combine_search_results(self, api_results: Dict[str, Any], web_results: Dict[str, Any]) -> Dict[str, Any]:
         """API와 웹 검색 결과 통합"""
+        # 웹 검색 결과에서 요구사항 추출
+        web_requirements = self._extract_requirements_from_web_results(web_results)
+        
         combined = {
             "certifications": [],
             "documents": [],
             "sources": [],
+            "detailed_regulations": [],
+            "testing_procedures": [],
+            "penalties_enforcement": [],
+            "validity_periods": [],
             "total_requirements": 0,
             "total_certifications": 0,
             "total_documents": 0,
             "agencies_found": [],
+            "category_stats": {
+                "basic_requirements": 0,
+                "detailed_regulations": 0,
+                "testing_procedures": 0,
+                "penalties_enforcement": 0,
+                "validity_periods": 0
+            },
             "search_sources": {
-                "api_success": "api_results" in api_results and "error" not in api_results,
-                "web_success": "web_results" in web_results and "error" not in web_results
+                "api_success": "agencies" in api_results and "error" not in api_results,
+                "web_success": len(web_results) > 0 and "error" not in web_results
             }
         }
         
@@ -524,26 +895,32 @@ class RequirementsTools:
                     combined["sources"].extend(data.get("sources", []))
                     combined["agencies_found"].append(agency)
         
-        # 웹 결과 통합 (기본 요구사항 추가)
-        if "web_results" in web_results and "error" not in web_results:
-            # 웹 검색에서 찾은 기관들에 대한 기본 요구사항 추가
-            found_agencies = set()
-            for query_key, data in web_results.items():
-                if "error" not in data and data.get("urls"):
-                    agency = data.get("agency")
-                    found_agencies.add(agency)
-            
-            # 찾은 기관들에 대한 기본 요구사항 추가
-            for agency in found_agencies:
-                if agency not in combined["agencies_found"]:
-                    combined["certifications"].append({
-                        "name": f"{agency} 기본 등록 요구사항",
-                        "required": True,
-                        "description": f"{agency}에서 요구하는 기본 등록 요구사항",
-                        "agency": agency,
-                        "url": f"https://www.{agency.lower()}.gov"
-                    })
-                    combined["agencies_found"].append(agency)
+        # 웹 검색 결과 통합 (새로운 추출 로직 사용)
+        combined["certifications"].extend(web_requirements["certifications"])
+        combined["documents"].extend(web_requirements["documents"])
+        combined["sources"].extend(web_requirements["sources"])
+        combined["detailed_regulations"].extend(web_requirements["detailed_regulations"])
+        combined["testing_procedures"].extend(web_requirements["testing_procedures"])
+        combined["penalties_enforcement"].extend(web_requirements["penalties_enforcement"])
+        combined["validity_periods"].extend(web_requirements["validity_periods"])
+        
+        # 웹 검색에서 찾은 기관들 추가
+        web_agencies = set()
+        for source in web_requirements["sources"]:
+            agency = source.get("agency", "Unknown")
+            if agency != "Unknown":
+                web_agencies.add(agency)
+        
+        for agency in web_agencies:
+            if agency not in combined["agencies_found"]:
+                combined["agencies_found"].append(agency)
+        
+        # 카테고리별 통계 계산
+        combined["category_stats"]["basic_requirements"] = len(web_requirements["certifications"])
+        combined["category_stats"]["detailed_regulations"] = len(web_requirements["detailed_regulations"])
+        combined["category_stats"]["testing_procedures"] = len(web_requirements["testing_procedures"])
+        combined["category_stats"]["penalties_enforcement"] = len(web_requirements["penalties_enforcement"])
+        combined["category_stats"]["validity_periods"] = len(web_requirements["validity_periods"])
         
         # 통계 계산
         combined["total_certifications"] = len(combined["certifications"])
