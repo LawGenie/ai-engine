@@ -312,11 +312,25 @@ class ComprehensiveAPIManager:
                 "rate_limit": "1000/hour"
             },
             
+            # FCC Device Authorization (검증된 URL)
+            {
+                "name": "fcc_device_authorization",
+                "agency": "FCC",
+                "url": "https://api.fcc.gov/device/authorization/grants",
+                "method": "GET",
+                "params": {"limit": 10, "format": "json"},
+                "headers": {},
+                "category": "electronics",
+                "hs_codes": ["84", "85"],
+                "api_key_required": False,
+                "rate_limit": "1000/hour"
+            },
+            
             # CPSC APIs (SaferProducts Recalls REST로 교체)
             {
                 "name": "cpsc_saferproducts_recalls",
                 "agency": "CPSC",
-                "url": "https://www.saferproducts.gov/RestWebServices/Recall",
+                "url": "https://www.cpsc.gov/SaferProducts/",
                 "method": "GET",
                 "params": {"format": "json"},
                 "headers": {},
@@ -340,11 +354,25 @@ class ComprehensiveAPIManager:
                 "rate_limit": "1000/day"
             },
             
-            # EPA APIs (화학물질 관련)
+            # CBP ACE Portal API
+            {
+                "name": "cbp_ace_portal_api",
+                "agency": "CBP",
+                "url": "https://api.cbp.gov/ace/",
+                "method": "GET",
+                "params": {"limit": 10, "format": "json"},
+                "headers": {},
+                "category": "trade",
+                "hs_codes": ["99"],  # 모든 HS 코드
+                "api_key_required": True,
+                "rate_limit": "1000/day"
+            },
+            
+            # EPA APIs (화학물질 관련) - api_endpoints.py와 통일
             {
                 "name": "epa_chemical_api",
                 "agency": "EPA",
-                "url": "https://comptox.epa.gov/dashboard/api/search",
+                "url": "https://comptox.epa.gov/dashboard/api/chemical/search",
                 "method": "GET",
                 "params": {"limit": 10},
                 "headers": {},
@@ -392,6 +420,20 @@ class ComprehensiveAPIManager:
                 "headers": {},
                 "category": "trade",
                 "hs_codes": ["72", "73"],  # 철강 관련 HS 코드
+                "api_key_required": False,
+                "rate_limit": "1000/day"
+            },
+            
+            # Aluminum Import Monitor API
+            {
+                "name": "commerce_aluminum_import_monitor",
+                "agency": "Commerce",
+                "url": "https://www.trade.gov/aluminum-import-monitor",
+                "method": "GET",
+                "params": {"limit": 10, "format": "json"},
+                "headers": {},
+                "category": "trade",
+                "hs_codes": ["76"],  # 알루미늄 관련 HS 코드
                 "api_key_required": False,
                 "rate_limit": "1000/day"
             }

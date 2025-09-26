@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import List, Dict
 
 # Tavily 패키지 import 시도 (tavily 우선)
@@ -71,16 +72,32 @@ class TavilySearchService:
             print(f"  🔄 TavilySearch 클라이언트 생성 실패, 빈 결과 반환")
             return []
 
-        try:
-            print(f"  🔍 TavilySearch 실행 - 쿼리: {query}")
-            print(f"  🔑 API 키 사용: {'예' if self.api_key else '아니오'}")
-            
-            # Tavily 검색 실행
-            print(f"  🔍 TavilySearch 실행 - 타입: {TAVILY_TYPE}")
-            if TAVILY_TYPE == "tavily_python":
-                # tavily-python 방식
-                print(f"  🔧 tavily_python 방식 사용")
-                if hasattr(client, 'search'):
+        retry_count = 0
+        max_retries = 2
+        
+        while retry_count <= max_retries:
+            try:
+                print(f"  🔍 TavilySearch 실행 - 쿼리: {query}")
+                print(f"  🔑 API 키 사용: {'예' if self.api_key else '아니오'}")
+                
+                # Tavily 검색 실행
+                print(f"  🔍 TavilySearch 실행 - 타입: {TAVILY_TYPE}")
+                if TAVILY_TYPE == "tavily_python":
+                    # tavily-python 방식
+                    print(f"  🔧 tavily_python 방식 사용")
+                    if hasattr(client, 'search'):
+                        response = client.search(
+                            query=query,
+                            max_results=max_results,
+                            include_answer=False,
+                            search_depth="advanced"
+                        )
+                        results = response.get("results", [])
+                    else:
+                        results = client.run(query)
+                elif TAVILY_TYPE == "tavily":
+                    # tavily 방식
+                    print(f"  🔧 tavily 방식 사용")
                     response = client.search(
                         query=query,
                         max_results=max_results,
@@ -89,27 +106,36 @@ class TavilySearchService:
                     )
                     results = response.get("results", [])
                 else:
-                    results = client.run(query)
-            elif TAVILY_TYPE == "tavily":
-                # tavily 방식
-                print(f"  🔧 tavily 방식 사용")
-                response = client.search(
-                    query=query,
-                    max_results=max_results,
-                    include_answer=False,
-                    search_depth="advanced"
-                )
-                results = response.get("results", [])
-            else:
-                print(f"  ❌ 알 수 없는 Tavily 타입: {TAVILY_TYPE}")
-                results = []
-            
-            print(f"  📊 Tavily 검색 결과: {len(results)}개")
-            
-            return results
-            
-        except Exception as e:
-            print(f"  ❌ Tavily 검색 실패: {e}")
-            return []
+                    print(f"  ❌ 알 수 없는 Tavily 타입: {TAVILY_TYPE}")
+                    results = []
+                
+                print(f"  📊 Tavily 검색 결과: {len(results)}개")
+                
+                # 메타 정보 추가
+                for result in results:
+                    result["_meta"] = {
+                        "provider": "tavily",
+                        "retries": retry_count,
+                        "fallback_used": False,
+                        "strategy_order": ["tavily"],
+                        "tokens_used": query.split(),
+                        "api_key_configured": bool(self.api_key)
+                    }
+                
+                return results
+                
+            except Exception as e:
+                retry_count += 1
+                if "432" in str(e) or "429" in str(e):
+                    print(f"  ⚠️ Tavily API 제한 ({e}), {retry_count}번째 재시도...")
+                    if retry_count <= max_retries:
+                        await asyncio.sleep(2 ** retry_count)  # 지수 백오프
+                        continue
+                    else:
+                        print(f"  ❌ Tavily 검색 최종 실패: {e}")
+                        return []
+                else:
+                    print(f"  ❌ Tavily 검색 실패: {e}")
+                    return []
 
 

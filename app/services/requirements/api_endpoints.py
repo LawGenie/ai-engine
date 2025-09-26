@@ -135,6 +135,14 @@ class APIEndpoints:
                         "exports": "https://api.cbp.gov/trade/statistics/exports",
                         "hs_codes": "https://api.cbp.gov/trade/statistics/hs-codes"
                     },
+                    "ace_portal": {
+                        "base": "https://api.cbp.gov/ace/",
+                        "api": "https://api.cbp.gov/ace/"
+                    },
+                    "stats": {
+                        "base": "https://www.cbp.gov/stats",
+                        "portal": "https://www.cbp.gov/stats"
+                    },
                     "rules_regulations": {
                         "base": "https://api.cbp.gov/rules-regulations",
                         "tariffs": "https://api.cbp.gov/rules-regulations/tariffs",
@@ -159,6 +167,14 @@ class APIEndpoints:
                         "search": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API/recalls/search",
                         "json": "https://www.cpsc.gov/Recalls/CPSC-Recalls-API/recalls.json"
                     },
+                    "saferproducts": {
+                        "base": "https://www.cpsc.gov/SaferProducts/",
+                        "api": "https://www.cpsc.gov/SaferProducts/"
+                    },
+                    "penalties": {
+                        "base": "https://www.cpsc.gov/",
+                        "civil_criminal": "https://www.cpsc.gov/"
+                    },
                     "data": {
                         "base": "https://www.cpsc.gov/api",
                         "recalls": "https://www.cpsc.gov/api/recalls",
@@ -166,6 +182,28 @@ class APIEndpoints:
                     }
                 },
                 "api_key_required": False,
+                "rate_limit": "1000/day"
+            },
+            
+            # Commerce (Department of Commerce)
+            "commerce": {
+                "base_url": "https://api.census.gov",
+                "endpoints": {
+                    "trade_data": {
+                        "base": "https://api.census.gov/data/timeseries/intltrade/",
+                        "imports": "https://api.census.gov/data/timeseries/intltrade/imports",
+                        "exports": "https://api.census.gov/data/timeseries/intltrade/exports"
+                    },
+                    "steel_import": {
+                        "base": "https://www.trade.gov/steel-import-monitoring-analysis-system-sima",
+                        "monitoring": "https://www.trade.gov/steel-import-monitoring-analysis-system-sima"
+                    },
+                    "aluminum_import": {
+                        "base": "https://www.trade.gov/aluminum-import-monitor",
+                        "monitoring": "https://www.trade.gov/aluminum-import-monitor"
+                    }
+                },
+                "api_key_required": True,
                 "rate_limit": "1000/day"
             },
             

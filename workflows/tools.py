@@ -13,16 +13,75 @@ from io import BytesIO
 from datetime import datetime
 import importlib.util
 import sys
+from abc import ABC, abstractmethod
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
 from app.services.requirements.data_gov_api import DataGovAPIService
 
 
+class SearchProvider(ABC):
+    """검색 프로바이더 추상화 클래스"""
+    
+    @abstractmethod
+    async def search(self, query: str, **kwargs) -> List[Dict[str, Any]]:
+        """검색 실행"""
+        pass
+    
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """프로바이더 이름"""
+        pass
+
+
+class TavilyProvider(SearchProvider):
+    """Tavily 검색 프로바이더"""
+    
+    def __init__(self):
+        self.service = TavilySearchService()
+    
+    async def search(self, query: str, **kwargs) -> List[Dict[str, Any]]:
+        try:
+            results = await self.service.search(query, **kwargs)
+            return results if results else []
+        except Exception as e:
+            print(f"❌ Tavily 검색 실패: {e}")
+            return []
+    
+    @property
+    def provider_name(self) -> str:
+        return "tavily"
+
+
+class DisabledProvider(SearchProvider):
+    """검색 비활성화 프로바이더 (Tavily 432 에러 시 사용)"""
+    
+    async def search(self, query: str, **kwargs) -> List[Dict[str, Any]]:
+        print(f"🔇 검색 비활성화 모드: '{query}' 스킵됨")
+        return []
+    
+    @property
+    def provider_name(self) -> str:
+        return "disabled"
+
+
 class RequirementsTools:
     """요구사항 분석을 위한 LangGraph 도구들"""
     
-    def __init__(self):
-        self.search_service = TavilySearchService()
+    def __init__(self, search_provider: Optional[SearchProvider] = None):
+        # 검색 프로바이더 설정 (기본값: Tavily, 환경변수로 제어 가능)
+        import os
+        provider_mode = os.getenv("SEARCH_PROVIDER", "tavily").lower()
+        
+        if provider_mode == "disabled":
+            self.search_provider = DisabledProvider()
+        else:
+            self.search_provider = TavilyProvider()
+        
+        # 외부에서 제공된 프로바이더가 있으면 사용
+        if search_provider:
+            self.search_provider = search_provider
+            
         self.web_scraper = WebScraper()
         self.data_gov_api = DataGovAPIService()
         self.precedent_collector = self._init_cbp_collector()
@@ -65,7 +124,7 @@ class RequirementsTools:
         """기관별 문서 검색 도구 (통합)"""
         print(f"🔧 [TOOL] {agency} 문서 검색: {query}")
         
-        results = await self.search_service.search(query, max_results)
+        results = await self.search_provider.search(query, max_results=max_results)
         
         # 기관별 도메인 필터링
         agency_domain = self.agency_domains.get(agency, "")
@@ -407,7 +466,7 @@ class RequirementsTools:
             web_results = {}
             for query_key, query in web_queries.items():
                 try:
-                    search_results = await self.search_service.search(query, max_results=5)
+                    search_results = await self.search_provider.search(query, max_results=5)
                     web_results[query_key] = {
                         "query": query,
                         "results": search_results,

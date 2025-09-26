@@ -15,9 +15,9 @@ class RequirementsNodes:
     """요구사항 분석을 위한 LangGraph 노드들"""
     
     def __init__(self):
-        self.search_service = TavilySearchService()
-        self.web_scraper = WebScraper()
+        # RequirementsTools에서 프로바이더를 가져와서 사용
         self.tools = RequirementsTools()
+        self.web_scraper = WebScraper()
         self.keyword_extractor = None
         self.hf_extractor = None
         self.openai_extractor = None
@@ -60,8 +60,17 @@ class RequirementsNodes:
             core_keywords = []
         if not core_keywords:
             core_keywords = self.keyword_extractor.extract(name, desc, top_k=3)
+        
+        # 상위 3개 키워드를 단계적으로 시도할 수 있도록 저장
         state["core_keywords"] = core_keywords
+        state["keyword_strategies"] = [
+            {"strategy": "top1", "keywords": core_keywords[:1]},
+            {"strategy": "top2", "keywords": core_keywords[:2]},
+            {"strategy": "top3", "keywords": core_keywords[:3]}
+        ]
+        
         print(f"\n🔎 [NODE] 핵심 키워드: {core_keywords}")
+        print(f"🔎 [NODE] 키워드 전략: {[s['strategy'] for s in state['keyword_strategies']]}")
         state["next_action"] = "call_hybrid_api"
         return state
     
@@ -71,7 +80,19 @@ class RequirementsNodes:
         hs_code = request.hs_code
         product_name = request.product_name
         keywords = state.get("core_keywords") or []
-        query_term = (keywords[0] if keywords else product_name) or ""
+        keyword_strategies = state.get("keyword_strategies", [])
+        
+        # 키워드 전략을 단계적으로 시도 (top1 → top2 → top3)
+        query_terms = []
+        for strategy in keyword_strategies:
+            if strategy["keywords"]:
+                query_terms.append(" ".join(strategy["keywords"]))
+        
+        # 기본값으로 상품명 사용
+        if not query_terms:
+            query_terms = [product_name]
+        
+        query_term = query_terms[0]  # 첫 번째 전략 사용
         
         print(f"\n🔍 [NODE] 기관별 문서 검색 시작")
         print(f"  📋 HS코드: {hs_code}")
@@ -132,11 +153,13 @@ class RequirementsNodes:
             print(f"\n  📡 {agency} 검색 중...")
             print(f"    쿼리: {query}")
             
-            # TavilySearch 시도 (더 많은 결과 수집)
-            results = await self.search_service.search(query, max_results=10)
-            print(f"    📊 TavilySearch 결과: {len(results)}개")
+            # 프로바이더를 통한 검색 시도 (더 많은 결과 수집)
+            results = await self.tools.search_provider.search(query, max_results=10)
+            print(f"    📊 {self.tools.search_provider.provider_name} 검색 결과: {len(results)}개")
             
-            if not results:
+            if not results and self.tools.search_provider.provider_name == "disabled":
+                print(f"    🔇 검색 비활성화 모드: '{query}' 스킵됨")
+            elif not results:
                 print(f"    💡 팁: TAVILY_API_KEY를 설정하면 더 정확한 검색 결과를 얻을 수 있습니다.")
             
             # 여러 링크 수집 (최대 5개)
