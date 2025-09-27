@@ -13,4 +13,5 @@ dependencies = [
     "httpx>=0.25.0",
     "tavily-python==0.3.3",
     "langgraph>=0.2.0",
+    "faiss-cpu>=1.12.0",
 ]

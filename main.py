@@ -31,6 +31,7 @@ else:
 from app.routers.product_router import router as product_router
 from app.routers.chat_router import router as chat_router
 from app.routers.requirements.requirement_router import router as requirement_router
+from app.routers.tax_router import router as tax_router
 from app.schemas.common import HealthResponse
 from datetime import datetime
 
@@ -44,6 +45,7 @@ app = FastAPI(
 app.include_router(product_router)
 app.include_router(chat_router)
 app.include_router(requirement_router)
+app.include_router(tax_router)
 
 @app.get("/")
 async def root():
