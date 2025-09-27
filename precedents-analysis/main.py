@@ -63,8 +63,32 @@ async def analyze_precedents(request: ProductAnalysisRequest):
         analysis_result = await analyzer.analyze_precedents(request.dict(), cbp_data)
         logger.info("AI 분석 완료")
         
-        # 3. 결과 반환
-        return PrecedentsAnalysisResponse(**analysis_result)
+        # 3. 딕셔너리를 문자열로 변환
+        success_cases = []
+        failure_cases = []
+        
+        for case in analysis_result.get("success_cases", []):
+            if isinstance(case, dict):
+                success_cases.append(case.get("text", str(case)))
+            else:
+                success_cases.append(str(case))
+        
+        for case in analysis_result.get("failure_cases", []):
+            if isinstance(case, dict):
+                failure_cases.append(case.get("text", str(case)))
+            else:
+                failure_cases.append(str(case))
+        
+        # 4. 결과 반환
+        return PrecedentsAnalysisResponse(
+            success_cases=success_cases,
+            failure_cases=failure_cases,
+            actionable_insights=analysis_result.get("actionable_insights", []),
+            risk_factors=analysis_result.get("risk_factors", []),
+            recommended_action=analysis_result.get("recommended_action", ""),
+            confidence_score=analysis_result.get("confidence_score", 0.0),
+            is_valid=analysis_result.get("is_valid", False)
+        )
         
     except Exception as e:
         logger.error(f"판례 분석 실패: {str(e)}")
