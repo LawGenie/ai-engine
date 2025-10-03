@@ -747,7 +747,7 @@ class RequirementsTools:
         
         # 3. 결과 통합
         print(f"\n  🔄 3단계: 결과 통합")
-        combined_results = self._combine_search_results(results["api_results"], results["web_results"])
+        combined_results = self._combine_search_results(hs_code, results["api_results"], results["web_results"])
         combined_results["target_agencies"] = target_agencies  # 타겟 기관 정보 추가
         combined_results["extracted_keywords"] = keywords  # 추출된 키워드 정보 추가
         results["combined_results"] = combined_results
@@ -875,8 +875,8 @@ class RequirementsTools:
         
         return extracted_requirements
 
-    def _combine_search_results(self, api_results: Dict[str, Any], web_results: Dict[str, Any]) -> Dict[str, Any]:
-        """API와 웹 검색 결과 통합"""
+    def _combine_search_results(self, hs_code: str, api_results: Dict[str, Any], web_results: Dict[str, Any]) -> Dict[str, Any]:
+        """API와 웹 검색 결과 통합 + 판례 기반 검증 주입"""
         # 웹 검색 결과에서 요구사항 추출
         web_requirements = self._extract_requirements_from_web_results(web_results)
         
@@ -947,4 +947,69 @@ class RequirementsTools:
         combined["total_documents"] = len(combined["documents"])
         combined["total_requirements"] = combined["total_certifications"] + combined["total_documents"]
         
+        # 판례 기반 검증 단계 (CBP)
+        try:
+            precedents_payload = None
+            if hasattr(self, 'get_cbp_precedents'):
+                precedents_payload = awaitable_result = None
+            # 동기/비동기 호환 처리
+            try:
+                import asyncio
+                if asyncio.get_event_loop().is_running():
+                    # tools는 일반 메서드이므로 내부에서 비동기 호출을 안전하게 처리할 수 없을 수 있음
+                    # precedents는 내부적으로 비동기일 수 있으므로 별도 헬퍼 사용
+                    precedents_payload = asyncio.get_event_loop().run_until_complete(
+                        self.get_cbp_precedents(hs_code)  # type: ignore
+                    )
+                else:
+                    precedents_payload = asyncio.run(self.get_cbp_precedents(hs_code))  # type: ignore
+            except RuntimeError:
+                # 이미 상위가 이벤트 루프를 관리 중인 경우, best-effort로 직접 await 시도
+                try:
+                    precedents_payload = self.get_cbp_precedents(hs_code)  # type: ignore
+                    if asyncio.iscoroutine(precedents_payload):
+                        precedents_payload = asyncio.get_event_loop().run_until_complete(precedents_payload)
+                except Exception:
+                    precedents_payload = None
+
+            if isinstance(precedents_payload, dict):
+                combined["precedents"] = {
+                    "hs_code": hs_code,
+                    "count": precedents_payload.get("count", 0)
+                }
+
+                precedents_list = precedents_payload.get("precedents", [])
+
+                # 간단 검증 로직: 동일 기관 언급 또는 공식 도메인 포함 시 verified 표시
+                def mark_verified(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+                    marked: List[Dict[str, Any]] = []
+                    for it in items:
+                        agency = (it.get("agency") or it.get("source") or "").upper()
+                        verified = False
+                        for case in precedents_list:
+                            text_blob = " ".join([
+                                str(case.get("title", "")),
+                                str(case.get("summary", "")),
+                                str(case.get("agency", "")),
+                                str(case.get("url", ""))
+                            ]).lower()
+                            if agency and agency.lower() in text_blob:
+                                verified = True
+                                break
+                        it["verified_by_precedent"] = bool(verified)
+                        marked.append(it)
+                    return marked
+
+                combined["certifications"] = mark_verified(combined.get("certifications", []))
+                combined["documents"] = mark_verified(combined.get("documents", []))
+
+                # 집계: 검증 카운트
+                combined["precedent_verification"] = {
+                    "total_precedents": len(precedents_list),
+                    "verified_certifications": sum(1 for c in combined.get("certifications", []) if c.get("verified_by_precedent")),
+                    "verified_documents": sum(1 for d in combined.get("documents", []) if d.get("verified_by_precedent"))
+                }
+        except Exception as e:
+            combined["precedent_verification_error"] = str(e)
+
         return combined

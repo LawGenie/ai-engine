@@ -119,9 +119,28 @@ class RequirementsWorkflow:
                 labeling=[]  # 라벨링 요구사항은 별도 구현 필요
             )
             
+            # HS코드 카테고리 분석
+            product_category = self._get_category_from_hs_code(request.hs_code)
+            print(f"📊 상품 카테고리: {product_category}")
+            
+            # 중복 제거 적용 (Pydantic 모델을 dict로 변환 후 중복 제거)
+            cert_dicts = [cert.dict() for cert in requirements.certifications]
+            doc_dicts = [doc.dict() for doc in requirements.documents]
+            
+            deduplicated_certs = self._deduplicate_items(cert_dicts)
+            deduplicated_docs = self._deduplicate_items(doc_dicts)
+            
+            # 중복 제거된 결과로 Pydantic 모델 재생성
+            requirements.certifications = [Certification(**cert_data) for cert_data in deduplicated_certs]
+            requirements.documents = [Document(**doc_data) for doc_data in deduplicated_docs]
+            
+            # 신뢰도 점수 계산
+            confidence_score = self._calculate_confidence_score(requirements, sources, consolidated)
+            print(f"📊 신뢰도 점수: {confidence_score:.2%}")
+            
             # 확장된 메타데이터 생성
             extended_metadata = self._generate_extended_metadata(
-                request, requirements, sources, consolidated
+                request, requirements, sources, consolidated, product_category, confidence_score
             )
             
             # HS코드 8자리와 6자리 추출
@@ -194,7 +213,7 @@ class RequirementsWorkflow:
         
         return reasoning
     
-    def _generate_extended_metadata(self, request: RequirementAnalysisRequest, requirements: Requirements, sources: List[Source], consolidated: Dict[str, Any]) -> Metadata:
+    def _generate_extended_metadata(self, request: RequirementAnalysisRequest, requirements: Requirements, sources: List[Source], consolidated: Dict[str, Any], product_category: str = "general", confidence_score: float = 0.5) -> Metadata:
         """확장된 메타데이터 생성"""
         import time
         import json
@@ -203,9 +222,12 @@ class RequirementsWorkflow:
         base_metadata = {
             "from_cache": False,
             "cached_at": None,
-            "confidence": 0.85,
+            "confidence": confidence_score,  # 계산된 신뢰도 점수 사용
             "response_time_ms": 2000,
-            "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "product_category": product_category,  # HS코드 기반 카테고리
+            "hs_code": request.hs_code,
+            "product_name": request.product_name
         }
         
         # 웹 스크래핑 메타데이터
@@ -400,3 +422,69 @@ class RequirementsWorkflow:
                 }
             ]
         }
+    
+    def _get_category_from_hs_code(self, hs_code: str) -> str:
+        """HS 코드에서 카테고리 추출 (smart_requirements_workflow에서 가져옴)"""
+        if not hs_code or len(hs_code) < 2:
+            return 'general'
+        
+        hs_chapter = hs_code[:2]
+        if hs_chapter in ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24']:
+            return 'agricultural'
+        elif hs_chapter in ['28', '29', '30', '31', '32', '33', '34', '35', '36', '37', '38']:
+            return 'chemical'
+        elif hs_chapter in ['84', '85']:
+            return 'electronics'
+        elif hs_chapter in ['90', '91', '92', '93', '94', '95', '96']:
+            return 'medical'
+        else:
+            return 'general'
+    
+    def _deduplicate_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """중복 항목 제거 (smart_requirements_workflow에서 가져옴)"""
+        seen = set()
+        unique_items = []
+        
+        for item in items:
+            # 고유 키 생성 (name + agency)
+            key = f"{item.get('name', '')}_{item.get('agency', '')}"
+            if key not in seen:
+                seen.add(key)
+                unique_items.append(item)
+        
+        return unique_items
+    
+    def _calculate_confidence_score(self, requirements: Requirements, sources: List[Source], consolidated: Dict[str, Any]) -> float:
+        """신뢰도 점수 계산 (smart_requirements_workflow에서 가져옴)"""
+        try:
+            # 기본 점수
+            base_score = 0.5
+            
+            # 인증요건과 서류요건 개수에 따른 점수
+            cert_count = len(requirements.certifications)
+            doc_count = len(requirements.documents)
+            source_count = len(sources)
+            
+            # 요구사항이 많을수록 높은 점수
+            if cert_count > 0:
+                base_score += min(0.3, cert_count * 0.05)
+            if doc_count > 0:
+                base_score += min(0.2, doc_count * 0.03)
+            if source_count > 0:
+                base_score += min(0.2, source_count * 0.02)
+            
+            # 기관 다양성 점수
+            agencies = set()
+            for cert in requirements.certifications:
+                if cert.agency:
+                    agencies.add(cert.agency)
+            
+            agency_diversity_score = min(0.1, len(agencies) * 0.02)
+            base_score += agency_diversity_score
+            
+            # 최대 1.0으로 제한
+            return min(1.0, base_score)
+            
+        except Exception as e:
+            print(f"신뢰도 점수 계산 오류: {e}")
+            return 0.5
