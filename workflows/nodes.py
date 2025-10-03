@@ -9,6 +9,7 @@ from app.services.requirements.keyword_extractor import KeywordExtractor, HfKeyw
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
 from app.models.requirement_models import RequirementAnalysisRequest
+from datetime import datetime
 
 
 class RequirementsNodes:
@@ -69,8 +70,33 @@ class RequirementsNodes:
             {"strategy": "top3", "keywords": core_keywords[:3]}
         ]
         
+        # 🎯 키워드 추출 단계의 상세 metadata 수집
+        keyword_metadata = {
+            "extraction_step": {
+                "hs_code": request.hs_code,
+                "product_name": request.product_name,
+                "product_description": request.product_description,
+                "extraction_methods_tried": [
+                    {"method": "OpenAI", "success": self.openai_extractor is not None, "keywords_found": core_keywords if self.openai_extractor else []},
+                    {"method": "HuggingFace", "success": self.hf_extractor is not None, "keywords_found": core_keywords if self.hf_extractor else []},
+                    {"method": "Heuristic", "success": True, "keywords_found": core_keywords}
+                ],
+                "final_keywords": core_keywords,
+                "keyword_count": len(core_keywords),
+                "extraction_timestamp": datetime.now().isoformat(),
+                "keyword_sources": {
+                    "from_product_name": name,
+                    "from_description": desc,
+                    "combined_text": f"{name} {desc}".strip()
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(keyword_metadata)
+        
         print(f"\n🔎 [NODE] 핵심 키워드: {core_keywords}")
         print(f"🔎 [NODE] 키워드 전략: {[s['strategy'] for s in state['keyword_strategies']]}")
+        print(f"🔎 [METADATA] 키워드 추출 상세 정보 저장됨")
         state["next_action"] = "call_hybrid_api"
         return state
     
@@ -154,7 +180,7 @@ class RequirementsNodes:
             print(f"    쿼리: {query}")
             
             # 프로바이더를 통한 검색 시도 (더 많은 결과 수집)
-            results = await self.tools.search_provider.search(query, max_results=10)
+            results = await self.tools.search_provider.search(query, max_results=15)  # 검색 결과를 15개로 확장
             print(f"    📊 {self.tools.search_provider.provider_name} 검색 결과: {len(results)}개")
             
             if not results and self.tools.search_provider.provider_name == "disabled":
@@ -162,20 +188,20 @@ class RequirementsNodes:
             elif not results:
                 print(f"    💡 팁: TAVILY_API_KEY를 설정하면 더 정확한 검색 결과를 얻을 수 있습니다.")
             
-            # 여러 링크 수집 (최대 5개)
-            chosen_urls = []
-            
-            if results:
-                # 각 결과 상세 출력
-                for i, result in enumerate(results, 1):
-                    title = result.get('title', 'No title')
-                    url = result.get('url', 'No URL')
-                    print(f"      {i}. {title}")
-                    print(f"         URL: {url}")
+                # 여러 링크 수집 (최대 10개로 확장)
+                chosen_urls = []
                 
-                # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 5개 선택)
-                chosen_urls = [result.get("url") for result in results[:5] if result.get("url")]
-                print(f"    ✅ {agency} 공식 사이트 결과 {len(chosen_urls)}개 선택")
+                if results:
+                    # 각 결과 상세 출력
+                    for i, result in enumerate(results, 1):
+                        title = result.get('title', 'No title')
+                        url = result.get('url', 'No URL')
+                        print(f"      {i}. {title}")
+                        print(f"         URL: {url}")
+                    
+                    # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 10개 선택)
+                    chosen_urls = [result.get("url") for result in results[:10] if result.get("url")]
+                    print(f"    ✅ {agency} 공식 사이트 결과 {len(chosen_urls)}개 선택")
             else:
                 # TavilySearch 실패 시 기본 URL 사용
                 agency_name = agency.split("_")[0]  # FDA_8digit -> FDA
@@ -197,12 +223,43 @@ class RequirementsNodes:
         found_count = sum(1 for v in search_results.values() if v.get("urls"))
         print(f"\n📋 [NODE] 검색 완료 - {found_count}개 URL 세트 발견")
         
+        # 🎯 기관별 검색 단계의 상세 metadata 수집
+        search_metadata = {
+            "search_step": {
+                "hs_code_8digit": hs_code_8digit,
+                "hs_code_6digit": hs_code_6digit,
+                "query_term": query_term,
+                "search_strategies": search_queries,
+                "search_provider": self.tools.search_provider.provider_name if hasattr(self.tools, 'search_provider') else "unknown",
+                "total_urls_found": found_count,
+                "search_results_per_agency": {
+                    agency: {
+                        "url_count": len(search_data["urls"]),
+                        "query": search_data["query"],
+                        "hs_code_type": search_data["hs_code_type"],
+                        "is_fallback": search_data["is_fallback"],
+                        "search_timestamp": datetime.now().isoformat()
+                    } for agency, search_data in search_results.items()
+                },
+                "default_urls_used": default_urls,
+                "search_performance": {
+                    "total_queries_executed": len(search_queries),
+                    "successful_searches": len([sr for sr in search_results.values() if not sr.get("is_fallback", False)]),
+                    "fallback_searches": len([sr for sr in search_results.values() if sr.get("is_fallback", False)])
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(search_metadata)
+
         # 상태 업데이트 (기존 상태 유지)
         state["search_results"] = search_results
         # 참고 링크 저장
         request = state["request"]
         save_meta = self.tools.save_reference_links(request.hs_code, request.product_name, search_results)
         state["references_saved"] = save_meta
+        
+        print(f"🔍 [METADATA] 기관별 검색 상세 정보 저장됨 - 총 {found_count}개 URL 발견")
         state["next_action"] = "scrape_documents"
         return state
 
@@ -217,12 +274,66 @@ class RequirementsNodes:
         print(f"\n📡 [NODE] 하이브리드 API 호출 시작: {hs_code} / {product_name}")
         try:
             # Phase 2-4 포함된 하이브리드 검색
+            hybrid_start_time = datetime.now()
             hybrid = await self.tools.search_requirements_hybrid(hs_code, query_term, product_description)
+            hybrid_end_time = datetime.now()
+            
+            # 🎯 하이브리드 검색 단계의 상세 metadata 수집
+            hybrid_metadata = {
+                "hybrid_api_step": {
+                    "hs_code": hs_code,
+                    "query_term": query_term,
+                    "product_description": product_description[:100] if product_description else "",  # 처음 100자만
+                    "api_parameters": {
+                        "hs_code": hs_code,
+                        "query": query_term,
+                        "description_length": len(product_description) if product_description else 0,
+                        "keywords_length": len(keywords)
+                    },
+                    "api_response": {
+                        "success": not hybrid.get("error"),
+                        "response_time_ms": int((hybrid_end_time - hybrid_start_time).total_seconds() * 1000),
+                        "data_keys": list(hybrid.keys()) if isinstance(hybrid, dict) else [],
+                        "error_message": hybrid.get("error") if hybrid.get("error") else None
+                    },
+                    "timestamp": hybrid_end_time.isoformat()
+                }
+            }
+            state["detailed_metadata"] = state.get("detailed_metadata", {})
+            state["detailed_metadata"].update(hybrid_metadata)
+            
             state["hybrid_result"] = hybrid
+            print(f"📡 [METADATA] 하이브리드 API 검색 상세 정보 저장됨 - 응답시간: {(hybrid_end_time - hybrid_start_time).total_seconds()*1000:.0f}ms")
             state["next_action"] = "scrape_documents"
         except Exception as e:
             print(f"  ❌ 하이브리드 호출 실패: {e}")
+            
+            # 오류 발생 시에도 메타데이터 수집
+            hybrid_metadata = {
+                "hybrid_api_step": {
+                    "hs_code": hs_code,
+                    "query_term": query_term,
+                    "product_description": product_description[:100] if product_description else "",
+                    "api_parameters": {
+                        "hs_code": hs_code,
+                        "query": query_term,
+                        "description_length": len(product_description) if product_description else 0,
+                        "keywords_length": len(keywords)
+                    },
+                    "api_response": {
+                        "success": False,
+                        "response_time_ms": None,
+                        "data_keys": [],
+                        "error_message": str(e)
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
+            state["detailed_metadata"] = state.get("detailed_metadata", {})
+            state["detailed_metadata"].update(hybrid_metadata)
+            
             state["hybrid_result"] = {"error": str(e)}
+            print(f"📡 [METADATA] 하이브리드 API 오류 정보 저장됨: {e}")
             state["next_action"] = "scrape_documents"
         return state
     
@@ -341,6 +452,42 @@ class RequirementsNodes:
         
         print(f"\n📋 [NODE] 스크래핑 완료 - {len(scraped_data)}개 기관 처리")
         
+        # 🎯 웹 스크래핑 단계의 상세 metadata 수집
+        scraping_metadata = {
+            "scraping_step": {
+                "hs_code": hs_code,
+                "total_agencies_scraped": len(scraped_data),
+                "scraping_performance": {
+                    "successful_scraping": len([data for data in scraped_data.values() if data.get("status") == "success"]),
+                    "failed_scraping": len([data for data in scraped_data.values() if data.get("status") in ["scraping_failed", "no_urls_found"]]) + len([data for data in scraped_data.values() if data.get("error")]),
+                    "total_certifications_found": sum(len(data.get("certifications", [])) for data in scraped_data.values()),
+                    "total_documents_found": sum(len(data.get("documents", [])) for data in scraped_data.values()),
+                    "total_sources_collected": sum(len(data.get("sources", [])) for data in scraped_data.values())
+                },
+                "scraped_agencies_details": {
+                    agency: {
+                        "status": data.get("status", "unknown"),
+                        "certifications_count": len(data.get("certifications", [])),
+                        "documents_count": len(data.get("documents", [])),
+                        "sources_count": len(data.get("sources", [])),
+                        "has_raw_page_data": "raw_page_data" in data,
+                        "hs_code_8digit_urls": len(data.get("hs_code_8digit", {}).get("urls", [])),
+                        "hs_code_6digit_urls": len(data.get("hs_code_6digit", {}).get("urls", [])),
+                        "error_message": data.get("error") if data.get("error") else None,
+                        "scraping_timestamp": datetime.now().isoformat()
+                    } for agency, data in scraped_data.items()
+                },
+                "scraping_statistics": {
+                    "8digit_hs_code_urls": sum(data.get("hs_code_8digit", {}).get("urls", []) for data in scraped_data.values() if data.get("hs_code_8digit", {}).get("urls")),
+                    "6digit_hs_code_urls": sum(data.get("hs_code_6digit", {}).get("urls", []) for data in scraped_data.values() if data.get("hs_code_6digit", {}).get("urls")),
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(scraping_metadata)
+        
+        print(f"📋 [METADATA] 웹 스크래핑 상세 정보 저장됨 - 인증 요건: {scraping_metadata['scraping_step']['scraping_performance']['total_certifications_found']}개, 서류: {scraping_metadata['scraping_step']['scraping_performance']['total_documents_found']}개")
+        
         # 상태 업데이트 (기존 상태 유지)
         state["scraped_data"] = scraped_data
         state["next_action"] = "consolidate_results"
@@ -391,29 +538,91 @@ class RequirementsNodes:
         print(f"  📄 총 필요서류: {len(all_documents)}개")
         print(f"  📚 총 출처: {len(all_sources)}개")
         
+        consolidation_start_time = datetime.now()
+        
         # 참고: CBP 판례 수집 추가
         request = state.get("request")
         cbp = None
+        precedents_fetch_start = datetime.now()
         if request:
             try:
                 cbp = await self.tools.get_cbp_precedents(request.hs_code)
-            except Exception:
-                cbp = {"error": "precedent_fetch_failed"}
+                precedents_fetch_end = datetime.now()
+                precedents_fetch_time = (precedents_fetch_end - precedents_fetch_start).total_seconds() * 1000
+                print(f"📊 CBP 판례 수집 성공: {len(cbp.get('precedents', []))}개 판례 확인됨 ({precedents_fetch_time:.0f}ms)")
+            except Exception as e:
+                cbp = {"error": "precedent_fetch_failed", "error_message": str(e)}
+                precedents_fetch_end = datetime.now()
+                precedents_fetch_time = (precedents_fetch_end - precedents_fetch_start).total_seconds() * 1000
+                print(f"📊 CBP 판례 수집 실패: {e} ({precedents_fetch_time:.0f}ms)")
 
         # 하이브리드(API+웹) 결과도 통합 (Phase 2-4 포함)
         hybrid = state.get("hybrid_result") or {}
+        hybrid_certifications = 0
+        hybrid_documents = 0
+        hybrid_sources = 0
+        phase_2_4_counts = {"testing_procedures": 0, "penalties_enforcement": 0, "validity_periods": 0}
+        
         if hybrid and not hybrid.get("error"):
             combined = hybrid.get("combined_results", {})
             if combined:
+                hybrid_certifications = len(combined.get("certifications", []))
+                hybrid_documents = len(combined.get("documents", []))
+                hybrid_sources = len(combined.get("sources", []))
+                
                 all_certifications.extend(combined.get("certifications", []))
                 all_documents.extend(combined.get("documents", []))
                 all_sources.extend(combined.get("sources", []))
                 
                 # Phase 2-4 결과 통합
+                phase_2_4_counts = {
+                    "testing_procedures": len(combined.get('testing_procedures', [])),
+                    "penalties_enforcement": len(combined.get('penalties_enforcement', [])),
+                    "validity_periods": len(combined.get('validity_periods', []))
+                }
                 print(f"  📊 Phase 2-4 결과 통합:")
-                print(f"    🧪 검사 절차: {len(combined.get('testing_procedures', []))}개")
-                print(f"    ⚖️ 처벌 정보: {len(combined.get('penalties_enforcement', []))}개")
-                print(f"    ⏰ 유효기간: {len(combined.get('validity_periods', []))}개")
+                print(f"    🧪 검사 절차: {phase_2_4_counts['testing_procedures']}개")
+                print(f"    ⚖️ 처벌 정보: {phase_2_4_counts['penalties_enforcement']}개")
+                print(f"    ⏰ 유효기간: {phase_2_4_counts['validity_periods']}개")
+
+        consolidation_end_time = datetime.now()
+        consolidation_time = (consolidation_end_time - consolidation_start_time).total_seconds() * 1000
+
+        # 🎯 결과 통합 단계의 상세 metadata 수집
+        consolidation_metadata = {
+            "consolidation_step": {
+                "hs_code": request.hs_code if request else "unknown",
+                "consolidation_performance": {
+                    "total_processing_time_ms": consolidation_time,
+                    "precedents_fetch_time_ms": precedents_fetch_time if 'precedents_fetch_time' in locals() else None,
+                    "consolidation_timestamp": consolidation_end_time.isoformat()
+                },
+                "final_counts": {
+                    "total_certifications": len(all_certifications),
+                    "total_documents": len(all_documents),
+                    "total_sources": len(all_sources),
+                    "total_precedents": len(cbp.get("precedents", [])) if cbp else 0,
+                    "hybrid_certifications_added": hybrid_certifications,
+                    "hybrid_documents_added": hybrid_documents,
+                    "hybrid_sources_added": hybrid_sources
+                },
+                "phase_2_4_counts": phase_2_4_counts,
+                "cbp_precedents_info": {
+                    "success": not cbp.get("error") if cbp else False,
+                    "precedents_count": len(cbp.get("precedents", [])) if cbp else 0,
+                    "error_message": cbp.get("error_message") if cbp and cbp.get("error") else None
+                },
+                "data_sources_summary": {
+                    "web_scraping_results": len(all_certifications) - hybrid_certifications,
+                    "hybrid_api_results": hybrid_certifications + hybrid_documents + hybrid_sources,
+                    "cbp_precedents": len(cbp.get("precedents", [])) if cbp else 0
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(consolidation_metadata)
+
+        print(f"📋 [METADATA] 결과 통합 상세 정보 저장됨 - 총 시간: {consolidation_time:.0f}ms, 최종 결과: 인증 {len(all_certifications)}개, 서류 {len(all_documents)}개")
 
         # 상태 업데이트 (기존 상태 유지)
         state["consolidated_results"] = {

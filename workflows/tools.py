@@ -8,15 +8,21 @@ import asyncio
 import httpx
 from pathlib import Path
 import json
-from pypdf import PdfReader
+try:
+    from pypdf import PdfReader
+    HAS_PYPDF = True
+except ImportError:
+    print("⚠️ pypdf 패키지가 설치되지 않아 PDF 읽기 기능이 비활성화됩니다.")
+    PdfReader = None
+    HAS_PYPDF = False
 from io import BytesIO
 from datetime import datetime
 import importlib.util
 import sys
 from abc import ABC, abstractmethod
 from app.services.requirements.tavily_search import TavilySearchService
-from app.services.requirements.web_scraper import WebScraper
-from app.services.requirements.data_gov_api import DataGovAPIService
+# from app.services.requirements.web_scraper import WebScraper  # 파일 없음
+# from app.services.requirements.data_gov_api import DataGovAPIService  # 파일 없음
 
 
 class SearchProvider(ABC):
@@ -85,18 +91,16 @@ class RequirementsTools:
         # HS 코드 기반 기관 매핑
         self.hs_code_agency_mapping = self._build_hs_code_mapping()
             
-        # API 키 예외 처리
-        try:
-            self.web_scraper = WebScraper()
-        except Exception as e:
-            print(f"⚠️ WebScraper 초기화 실패: {e}")
-            self.web_scraper = None
+        # API 키 예외 처리 - 임시 주석처리 (모듈 누락)
+        # try:
+        #     self.web_scraper = WebScraper()
+        # except Exception as e:
+        #     self.web_scraper = None
         
-        try:
-            self.data_gov_api = DataGovAPIService()
-        except Exception as e:
-            print(f"⚠️ DataGovAPIService 초기화 실패: {e}")
-            self.data_gov_api = None
+        # try:
+        #     self.data_gov_api = DataGovAPIService()
+        # except Exception as e:
+        #     self.data_gov_api = None
         
         try:
             self.precedent_collector = self._init_cbp_collector()

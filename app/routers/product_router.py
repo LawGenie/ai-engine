@@ -11,7 +11,7 @@ from app.schemas.product import (
 from app.schemas.common import BaseResponse
 from app.services.hs_code_service import HSCodeService
 from app.services.tariff_service import TariffService
-from app.services.requirements_service import RequirementsService
+from app.services.requirements.requirements_cache_service import RequirementsCacheService
 from app.services.precedents_service import PrecedentsService
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -104,19 +104,15 @@ async def run_background_analysis(product_id: str, hs_code: str):
         
         # 각 서비스 초기화
         tariff_service = TariffService()
-        requirements_service = RequirementsService()
+        # requirements_service = RequirementsService()  # 임시 주석처리
         precedents_service = PrecedentsService()
         
         # 병렬로 AI 분석 실행
         analysis_status[product_id]["progress"] = 30
         
-        tasks = [
-            tariff_service.calculate(hs_code),
-            requirements_service.analyze(hs_code),
-            precedents_service.analyze(hs_code)
-        ]
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # 임시 간단한 응답 반환
+        tariff_result = await tariff_service.calculate(hs_code)
+        precedents_result = await precedents_service.analyze(hs_code)
         
         analysis_status[product_id]["progress"] = 80
         

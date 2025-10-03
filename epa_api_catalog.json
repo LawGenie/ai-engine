@@ -1,0 +1,233 @@
+{
+  "Application Programming Interface (API)": {
+    "name": "Application Programming Interface (API)",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "Available APIs&nbsp;": {
+    "name": "Available APIs&nbsp;",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "API Strategy&nbsp;": {
+    "name": "API Strategy&nbsp;",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://www.epa.gov/data/application-programming-interface-api": {
+    "name": "https://www.epa.gov/data/application-programming-interface-api",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://api.data.gov/": {
+    "name": "https://api.data.gov/",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov/",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://aqs.epa.gov/aqsweb/documents/data_api.html": {
+    "name": "https://aqs.epa.gov/aqsweb/documents/data_api.html",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://aqs.epa.gov/aqsweb/documents/data_api.html",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/power-sector/cam-api-portal": {
+    "name": "/power-sector/cam-api-portal",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/ejscreen/ejscreen-api": {
+    "name": "/ejscreen/ejscreen-api",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/frs/facility-registry-service-frs-api": {
+    "name": "/frs/facility-registry-service-frs-api",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/developers/data-data-products-field-audit-checklist-tool-api": {
+    "name": "/developers/data-data-products-field-audit-checklist-tool-api",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/developers/data-data-products-insect-repellents-api": {
+    "name": "/developers/data-data-products-insect-repellents-api",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://watersgeo.epa.gov/openapi/waters/": {
+    "name": "https://watersgeo.epa.gov/openapi/waters/",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://watersgeo.epa.gov/openapi/waters/",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/developers/data-data-products-draft-api-strategy": {
+    "name": "/developers/data-data-products-draft-api-strategy",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/data/application-programming-interface-api": {
+    "name": "/data/application-programming-interface-api",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/data/draft-api-strategy": {
+    "name": "/data/draft-api-strategy",
+    "description": "EPA API discovered from https://www.epa.gov/data/application-programming-interface-api",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://www.epa.gov/data/application-programming-interface-api",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "/organization/82b85475-f85d-404a-b95b-89d1a42e9f6b?res_format=API": {
+    "name": "/organization/82b85475-f85d-404a-b95b-89d1a42e9f6b?res_format=API",
+    "description": "EPA API discovered from https://catalog.data.gov/organization/epa-gov",
+    "base_url": "https://api.data.gov",
+    "endpoints": [],
+    "documentation_url": "https://catalog.data.gov/organization/epa-gov",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://www.epa.gov/enviro/envirofacts-data-service-api": {
+    "name": "https://www.epa.gov/enviro/envirofacts-data-service-api",
+    "description": "EPA API discovered from https://catalog.data.gov/organization/epa-gov",
+    "base_url": "https://www.epa.gov/enviro/envirofacts-data-service-api",
+    "endpoints": [],
+    "documentation_url": "https://catalog.data.gov/organization/epa-gov",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://data.energystar.gov/api/views/j7nq-iepp/rows.csv?accessType=DOWNLOAD": {
+    "name": "https://data.energystar.gov/api/views/j7nq-iepp/rows.csv?accessType=DOWNLOAD",
+    "description": "EPA API discovered from https://catalog.data.gov/organization/epa-gov",
+    "base_url": "https://data.energystar.gov/api/views/j7nq-iepp/rows.csv?accessType=DOWNLOAD",
+    "endpoints": [],
+    "documentation_url": "https://catalog.data.gov/organization/epa-gov",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://data.energystar.gov/api/views/j7nq-iepp/rows.rdf?accessType=DOWNLOAD": {
+    "name": "https://data.energystar.gov/api/views/j7nq-iepp/rows.rdf?accessType=DOWNLOAD",
+    "description": "EPA API discovered from https://catalog.data.gov/organization/epa-gov",
+    "base_url": "https://data.energystar.gov/api/views/j7nq-iepp/rows.rdf?accessType=DOWNLOAD",
+    "endpoints": [],
+    "documentation_url": "https://catalog.data.gov/organization/epa-gov",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://data.energystar.gov/api/views/j7nq-iepp/rows.json?accessType=DOWNLOAD": {
+    "name": "https://data.energystar.gov/api/views/j7nq-iepp/rows.json?accessType=DOWNLOAD",
+    "description": "EPA API discovered from https://catalog.data.gov/organization/epa-gov",
+    "base_url": "https://data.energystar.gov/api/views/j7nq-iepp/rows.json?accessType=DOWNLOAD",
+    "endpoints": [],
+    "documentation_url": "https://catalog.data.gov/organization/epa-gov",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  },
+  "https://data.energystar.gov/api/views/j7nq-iepp/rows.xml?accessType=DOWNLOAD": {
+    "name": "https://data.energystar.gov/api/views/j7nq-iepp/rows.xml?accessType=DOWNLOAD",
+    "description": "EPA API discovered from https://catalog.data.gov/organization/epa-gov",
+    "base_url": "https://data.energystar.gov/api/views/j7nq-iepp/rows.xml?accessType=DOWNLOAD",
+    "endpoints": [],
+    "documentation_url": "https://catalog.data.gov/organization/epa-gov",
+    "category": "environmental",
+    "requires_api_key": true,
+    "rate_limit": "1000/hour",
+    "last_updated": "2025-09-23T14:12:46.688061"
+  }
+}
