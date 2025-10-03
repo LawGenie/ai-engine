@@ -49,10 +49,11 @@ class RequirementsWorkflow:
             cached_result = await self.cache_service.get_cached_analysis(hs_code, product_name)
             if cached_result:
                 print(f"✅ 캐시에서 반환")
-                cached_result["cache_hit"] = True
-                cached_result["force_refresh"] = force_refresh
-                cached_result["is_new_product"] = is_new_product
-                return cached_result
+                # 캐시된 데이터를 RequirementsResponse 형식으로 변환
+                formatted_result = self._format_cached_response(
+                    hs_code, product_name, cached_result, force_refresh, is_new_product
+                )
+                return formatted_result
         
         start_time = datetime.now()
         
@@ -253,3 +254,40 @@ class RequirementsWorkflow:
             return min(score, 1.0)
         except Exception:
             return 0.0
+    
+    def _format_cached_response(self, hs_code: str, product_name: str, cached_result: Dict[str, Any], force_refresh: bool, is_new_product: bool) -> Dict[str, Any]:
+        """캐시된 데이터를 RequirementsResponse 형식으로 변환"""
+        try:
+            # 기본 필드 설정
+            response = {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "status": "completed",
+                "timestamp": datetime.now().isoformat(),
+                "processing_time_ms": 0,  # 캐시에서는 처리 시간 없음
+                "cache_hit": True,
+                "force_refresh": force_refresh,
+                "is_new_product": is_new_product
+            }
+            
+            # 캐시된 분석 결과 추가
+            if isinstance(cached_result, dict):
+                for key, value in cached_result.items():
+                    if key not in ["hs_code", "product_name", "status", "timestamp", "processing_time_ms"]:
+                        response[key] = value
+            
+            return response
+            
+        except Exception as e:
+            print(f"⚠️ 캐시 응답 포맷 변환 실패: {e}")
+            # 폴백: 기본 형식으로 반환
+            return {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "status": "completed",
+                "timestamp": datetime.now().isoformat(),
+                "processing_time_ms": 0,
+                "cache_hit": True,
+                "force_refresh": force_refresh,
+                "is_new_product": is_new_product
+            }

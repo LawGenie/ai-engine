@@ -39,14 +39,13 @@ else:
 
 from app.routers.product_router import router as product_router
 from app.routers.chat_router import router as chat_router
-from app.routers.requirements_router import router as requirement_router
-from app.routers.tax_router import router as tax_router
-from app.routers.testing_procedures_router import router as testing_procedures_router
-from app.routers.detailed_regulations_router import router as detailed_regulations_router
-from app.routers.penalties_router import router as penalties_router
-from app.routers.validity_router import router as validity_router
-from app.routers.verification_router import router as verification_router
 from app.routers.requirements_router import router as requirements_router
+# from app.routers.tax_router import router as tax_router  # 파일이 없음
+# from app.routers.testing_procedures_router import router as testing_procedures_router  # 파일이 없음
+# from app.routers.detailed_regulations_router import router as detailed_regulations_router  # 파일이 없음
+# from app.routers.penalties_router import router as penalties_router  # 파일이 없음
+# from app.routers.validity_router import router as validity_router  # 파일이 없음
+from app.routers.verification_router import router as verification_router
 from app.routers.product_registration_router import router as product_registration_router
 from app.routers.keyword_extraction_router import router as keyword_extraction_router
 from app.schemas.common import HealthResponse
@@ -61,14 +60,8 @@ app = FastAPI(
 # 라우터 등록
 app.include_router(product_router)
 app.include_router(chat_router)
-app.include_router(requirement_router)
-app.include_router(tax_router)
-app.include_router(testing_procedures_router)
-app.include_router(detailed_regulations_router)
-app.include_router(penalties_router)
-app.include_router(validity_router)
-app.include_router(verification_router)
 app.include_router(requirements_router)
+app.include_router(verification_router)
 app.include_router(product_registration_router)
 app.include_router(keyword_extraction_router)
 
@@ -77,7 +70,7 @@ async def root():
     return {
         "message": "LawGenie AI Engine is running!",
         "version": "1.0.0",
-        "services": ["hs_code_recommendation", "requirements_analysis", "precedents_analysis", "detailed_regulations", "testing_procedures", "penalties", "validity", "requirements", "product_registration", "keyword_extraction", "chat"]
+        "services": ["requirements_analysis", "verification", "product_registration", "keyword_extraction", "chat"]
     }
 
 @app.get("/health", response_model=HealthResponse)
