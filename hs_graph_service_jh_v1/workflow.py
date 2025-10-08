@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from prompts import get_hs_code_analysis_prompt
+from llm_service import get_hs_code_analysis_prompt
 
 # .env 파일 로드
 load_dotenv()
