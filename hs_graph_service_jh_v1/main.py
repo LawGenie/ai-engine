@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import logging
-from hs_code_analyzer import HsCodeAnalyzer
+from workflow import HsCodeAnalyzer
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
