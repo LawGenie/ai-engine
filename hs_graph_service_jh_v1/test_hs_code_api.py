@@ -22,8 +22,8 @@ async def test_hs_code_analysis():
             "origin_country": "KOR"
         },
         {
-            "product_name": "Instant Cooked Rice Multipack",
-            "product_description": "Premium Korean short-grain rice, pre-cooked and packaged for convenience. Microwave-ready in 2 minutes, maintains fresh texture and taste. No preservatives added. Volume: 210g x 12 packs, vacuum-sealed packaging, total weight: 2.8kg. Heat in microwave for 2 minutes or steam for 3 minutes.",
+            "product_name": "Hydrating Anti-Wrinkle Face Cream",
+            "product_description": "Premium anti-aging facial moisturizer designed for daily skincare routine. This rich cream preparation contains hyaluronic acid, peptides, and ceramides to deeply hydrate skin and reduce fine lines. The product is a thick, creamy cosmetic preparation intended for topical application on face and neck area. Formulated as an emulsion-based beauty treatment that absorbs into skin to provide long-lasting moisture and anti-aging benefits. Packaged in 50ml airless pump jar for retail cosmetic use. This skincare cream is specifically formulated for mature skin types and is applied twice daily as part of regular beauty regimen. The product falls under cosmetic preparations category for skin care and beauty enhancement purposes.",
             "origin_country": "KOR"
         }
     ]
