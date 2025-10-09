@@ -8,6 +8,7 @@ from .tools import RequirementsTools
 from app.services.requirements.keyword_extractor import KeywordExtractor, HfKeywordExtractor, OpenAiKeywordExtractor
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
+from app.services.requirements.error_handler import error_handler, WorkflowError, ErrorSeverity, ErrorRecoveryStrategy
 from app.models.requirement_models import RequirementAnalysisRequest
 from datetime import datetime
 
@@ -30,37 +31,77 @@ class RequirementsNodes:
         - 길이 3 이상 단어 우선, 상위 3개 반환
         - 한글일 경우 간단 매핑 시도
         """
-        request = state["request"]
-        name = (request.product_name or "").strip()
-        desc = (request.product_description or "").strip()
-        # HF 추출기 시도 → 실패 시 휴리스틱
-        if self.hf_extractor is None:
-            try:
-                self.hf_extractor = HfKeywordExtractor()
-            except Exception:
-                self.hf_extractor = None
-        if self.keyword_extractor is None:
-            self.keyword_extractor = KeywordExtractor()
-        if self.openai_extractor is None:
-            try:
-                self.openai_extractor = OpenAiKeywordExtractor()
-            except Exception:
-                self.openai_extractor = None
+        try:
+            request = state["request"]
+            name = (request.product_name or "").strip()
+            desc = (request.product_description or "").strip()
+            
+            # HF 추출기 시도 → 실패 시 휴리스틱
+            if self.hf_extractor is None:
+                try:
+                    self.hf_extractor = HfKeywordExtractor()
+                except Exception as e:
+                    self.hf_extractor = None
+                    print(f"⚠️ HF 키워드 추출기 초기화 실패: {e}")
+            
+            if self.keyword_extractor is None:
+                self.keyword_extractor = KeywordExtractor()
+            
+            if self.openai_extractor is None:
+                try:
+                    self.openai_extractor = OpenAiKeywordExtractor()
+                except Exception as e:
+                    self.openai_extractor = None
+                    print(f"⚠️ OpenAI 키워드 추출기 초기화 실패: {e}")
 
-        core_keywords = []
-        try:
-            # OpenAI 우선(플래그 활성 시) → HF → 휴리스틱
-            if self.openai_extractor:
-                core_keywords = self.openai_extractor.extract(name, desc, top_k=3)
-        except Exception:
             core_keywords = []
-        try:
-            if self.hf_extractor:
-                core_keywords = self.hf_extractor.extract(name, desc, top_k=3)
-        except Exception:
-            core_keywords = []
-        if not core_keywords:
-            core_keywords = self.keyword_extractor.extract(name, desc, top_k=3)
+            
+            # 키워드 추출 시도 (우선순위: OpenAI → HF → 휴리스틱)
+            try:
+                if self.openai_extractor:
+                    core_keywords = self.openai_extractor.extract(name, desc, top_k=3)
+                    print(f"✅ OpenAI 키워드 추출 성공: {core_keywords}")
+            except Exception as e:
+                print(f"⚠️ OpenAI 키워드 추출 실패: {e}")
+                core_keywords = []
+            
+            if not core_keywords:
+                try:
+                    if self.hf_extractor:
+                        core_keywords = self.hf_extractor.extract(name, desc, top_k=3)
+                        print(f"✅ HF 키워드 추출 성공: {core_keywords}")
+                except Exception as e:
+                    print(f"⚠️ HF 키워드 추출 실패: {e}")
+                    core_keywords = []
+            
+            if not core_keywords:
+                try:
+                    core_keywords = self.keyword_extractor.extract(name, desc, top_k=3)
+                    print(f"✅ 휴리스틱 키워드 추출 성공: {core_keywords}")
+                except Exception as e:
+                    print(f"❌ 휴리스틱 키워드 추출 실패: {e}")
+                    # 최종 폴백: 상품명에서 기본 키워드 추출
+                    core_keywords = self._extract_fallback_keywords(name, desc)
+                    print(f"🔄 폴백 키워드 추출: {core_keywords}")
+            
+        except Exception as e:
+            print(f"❌ 키워드 추출 노드 전체 실패: {e}")
+            # 에러 처리
+            error_result = error_handler.handle_error(
+                WorkflowError(
+                    f"키워드 추출 실패: {str(e)}",
+                    ErrorSeverity.MEDIUM,
+                    ErrorRecoveryStrategy.FALLBACK,
+                    {'step': 'keyword_extraction', 'hs_code': request.hs_code}
+                ),
+                {'step': 'keyword_extraction', 'state': state}
+            )
+            
+            if error_result['continue_workflow']:
+                core_keywords = error_result.get('fallback_data', {}).get('keywords', ['default'])
+                print(f"🔄 에러 복구 후 폴백 키워드 사용: {core_keywords}")
+            else:
+                raise WorkflowError("키워드 추출 실패로 워크플로우 중단", ErrorSeverity.HIGH)
         
         # 상위 3개 키워드를 단계적으로 시도할 수 있도록 저장
         state["core_keywords"] = core_keywords
@@ -99,6 +140,38 @@ class RequirementsNodes:
         print(f"🔎 [METADATA] 키워드 추출 상세 정보 저장됨")
         state["next_action"] = "call_hybrid_api"
         return state
+    
+    def _extract_fallback_keywords(self, product_name: str, product_description: str) -> List[str]:
+        """폴백 키워드 추출 (기본 휴리스틱)"""
+        text = f"{product_name} {product_description}".lower()
+        
+        # 기본 키워드 매핑
+        keyword_mapping = {
+            'vitamin': ['vitamin', 'supplement', 'health'],
+            'serum': ['serum', 'skincare', 'beauty'],
+            'cream': ['cream', 'moisturizer', 'skincare'],
+            'food': ['food', 'nutrition', 'diet'],
+            'cosmetic': ['cosmetic', 'beauty', 'makeup'],
+            'electronic': ['electronic', 'device', 'technology'],
+            'toy': ['toy', 'children', 'play'],
+            'clothing': ['clothing', 'garment', 'textile']
+        }
+        
+        # 매핑된 키워드 찾기
+        for key, keywords in keyword_mapping.items():
+            if key in text:
+                return keywords[:3]
+        
+        # 기본 키워드 추출
+        words = text.split()
+        keywords = []
+        for word in words:
+            if len(word) > 3 and word.isalpha():
+                keywords.append(word)
+                if len(keywords) >= 3:
+                    break
+        
+        return keywords if keywords else ['product', 'import', 'requirement']
     
     async def search_agency_documents(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """기관별 문서 검색 노드"""

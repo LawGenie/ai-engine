@@ -21,8 +21,9 @@ import importlib.util
 import sys
 from abc import ABC, abstractmethod
 from app.services.requirements.tavily_search import TavilySearchService
-# from app.services.requirements.web_scraper import WebScraper  # 파일 없음
-# from app.services.requirements.data_gov_api import DataGovAPIService  # 파일 없음
+from app.services.requirements.web_scraper import WebScraper
+from app.services.requirements.data_gov_api import DataGovAPIService
+from app.services.requirements.env_manager import env_manager
 
 
 class SearchProvider(ABC):
@@ -75,14 +76,15 @@ class RequirementsTools:
     """요구사항 분석을 위한 LangGraph 도구들"""
     
     def __init__(self, search_provider: Optional[SearchProvider] = None):
-        # 검색 프로바이더 설정 (기본값: Tavily, 환경변수로 제어 가능)
-        import os
-        provider_mode = os.getenv("SEARCH_PROVIDER", "tavily").lower()
+        # 환경변수 관리자를 통한 검색 프로바이더 설정
+        provider_config = env_manager.get_search_provider_config()
         
-        if provider_mode == "disabled":
+        if provider_config['provider'] == "disabled" or not provider_config['is_available']:
             self.search_provider = DisabledProvider()
+            print(f"🔇 검색 프로바이더: {provider_config['provider']} (API 키 없음)")
         else:
             self.search_provider = TavilyProvider()
+            print(f"✅ 검색 프로바이더: {provider_config['provider']} (API 키 있음)")
         
         # 외부에서 제공된 프로바이더가 있으면 사용
         if search_provider:
@@ -91,16 +93,18 @@ class RequirementsTools:
         # HS 코드 기반 기관 매핑
         self.hs_code_agency_mapping = self._build_hs_code_mapping()
             
-        # API 키 예외 처리 - 임시 주석처리 (모듈 누락)
-        # try:
-        #     self.web_scraper = WebScraper()
-        # except Exception as e:
-        #     self.web_scraper = None
+        # API 키 예외 처리
+        try:
+            self.web_scraper = WebScraper()
+        except Exception as e:
+            print(f"⚠️ WebScraper 초기화 실패: {e}")
+            self.web_scraper = None
         
-        # try:
-        #     self.data_gov_api = DataGovAPIService()
-        # except Exception as e:
-        #     self.data_gov_api = None
+        try:
+            self.data_gov_api = DataGovAPIService()
+        except Exception as e:
+            print(f"⚠️ DataGovAPIService 초기화 실패: {e}")
+            self.data_gov_api = None
         
         try:
             self.precedent_collector = self._init_cbp_collector()
@@ -109,6 +113,26 @@ class RequirementsTools:
             self.precedent_collector = None
         
         self.references_store_path = Path("reference_links.json")
+        
+        # API 상태 로깅
+        api_status = env_manager.get_api_status_summary()
+        print(f"📊 API 상태 요약: {api_status['available_api_keys']}/{api_status['total_api_keys']}개 키 사용 가능")
+        if api_status['missing_keys']:
+            print(f"⚠️ 누락된 API 키: {', '.join(api_status['missing_keys'])}")
+    
+    def get_api_status(self) -> Dict[str, Any]:
+        """API 키 상태 반환"""
+        return env_manager.get_api_status_summary()
+    
+    def validate_dependencies(self) -> Dict[str, bool]:
+        """필수 의존성 검증"""
+        validation = {
+            'search_provider': self.search_provider.provider_name != 'disabled',
+            'web_scraper': self.web_scraper is not None,
+            'data_gov_api': self.data_gov_api is not None,
+            'cbp_collector': self.precedent_collector is not None
+        }
+        return validation
     def _build_hs_code_mapping(self) -> Dict[str, Dict[str, Any]]:
         """HS 코드 기반 정부기관 매핑 구축"""
         return {
@@ -426,6 +450,17 @@ class RequirementsTools:
         print(f"  URL: {url}")
         print(f"  HS코드: {hs_code}")
         
+        # WebScraper가 초기화되지 않은 경우
+        if not self.web_scraper:
+            print(f"  ❌ WebScraper가 초기화되지 않음")
+            return {
+                "agency": agency,
+                "error": "WebScraper not initialized",
+                "certifications": [],
+                "documents": [],
+                "sources": []
+            }
+        
         try:
             # 기관별 스크래핑 메서드 매핑
             scraper_methods = {
@@ -668,7 +703,17 @@ class RequirementsTools:
         # 1. Data.gov API 검색 (HS코드 직접 검색)
         try:
             print(f"\n  🔍 1단계: Data.gov API 검색")
-            api_results = await self.data_gov_api.search_requirements_by_hs_code(hs_code, product_name)
+            if not self.data_gov_api:
+                print(f"    ⚠️ DataGovAPIService가 초기화되지 않음 - 모의 데이터 사용")
+                api_results = {
+                    "hs_code": hs_code,
+                    "product_name": product_name,
+                    "error": "DataGovAPIService not initialized",
+                    "total_requirements": 0,
+                    "agencies": {}
+                }
+            else:
+                api_results = await self.data_gov_api.search_requirements_by_hs_code(hs_code, product_name)
             results["api_results"] = api_results
             results["search_methods"].append("data_gov_api")
             print(f"    ✅ API 검색 완료: {api_results.get('total_requirements', 0)}개 요구사항")

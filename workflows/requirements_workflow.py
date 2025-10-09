@@ -23,6 +23,11 @@ class RequirementsState:
 
 class RequirementsWorkflow:
     def __init__(self):
+        # 통합 워크플로우 사용
+        from workflows.unified_workflow import unified_workflow
+        self.unified_workflow = unified_workflow
+        
+        # 기존 서비스들도 유지 (하위 호환성)
         from app.services.requirements.hs_code_agency_mapping_service import HsCodeAgencyMappingService
         from app.services.requirements.search_service import SearchService
         from app.services.requirements.llm_summary_service import LlmSummaryService
@@ -40,7 +45,7 @@ class RequirementsWorkflow:
         force_refresh: bool = False,
         is_new_product: bool = False
     ) -> Dict[str, Any]:
-        """요구사항 분석 실행"""
+        """요구사항 분석 실행 (통합 워크플로우 사용)"""
         
         print(f"🚀 요구사항 분석 시작 - HS코드: {hs_code}, 강제갱신: {force_refresh}, 신규상품: {is_new_product}")
         
@@ -55,63 +60,23 @@ class RequirementsWorkflow:
                 )
                 return formatted_result
         
-        start_time = datetime.now()
-        
-        state = RequirementsState(
-            hs_code=hs_code,
-            product_name=product_name,
-            product_description=product_description
-        )
-        
+        # 통합 워크플로우 사용
         try:
-            # 1단계: 기관 매핑
-            mapping_result = await self.agency_mapping_service.get_relevant_agencies(
+            result = await self.unified_workflow.analyze_requirements(
                 hs_code=hs_code,
                 product_name=product_name,
-                product_description=product_description
+                product_description=product_description,
+                force_refresh=force_refresh,
+                is_new_product=is_new_product
             )
-            state.recommended_agencies = mapping_result.recommended_agencies
-            
-            # 2단계: 하이브리드 검색
-            search_queries = self._build_queries(hs_code, product_name, state.recommended_agencies)
-            search_results = await self.search_service.search_requirements(
-                hs_code=hs_code,
-                product_name=product_name,
-                agencies=state.recommended_agencies,
-                search_queries=search_queries
-            )
-            state.search_results = search_results
-            
-            # 3단계: LLM 요약
-            raw_documents = self._extract_documents(search_results)
-            
-            # 검색 결과가 없어도 기본 요약 실행 (mock 데이터 포함)
-            if not raw_documents:
-                print("⚠️ 검색 결과 없음 - 기본 요약 정보 생성")
-                raw_documents = [{
-                    "content": f"HS코드 {hs_code} ({product_name})의 기본 수입 요건 안내",
-                    "source": "기본 안내",
-                    "website": "https://www.cbp.gov/trade/trade-tools"
-                }]
-            
-            summary_result = await self.llm_summary_service.summarize_regulations(
-                hs_code=hs_code,
-                product_name=product_name,
-                raw_documents=raw_documents
-            )
-            state.llm_summary = summary_result
-            
-            # 4단계: 결과 통합
-            state.processing_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-            state.final_result = self._integrate_results(state)
             
             # 캐시에 저장 (신규 상품이거나 강제 갱신인 경우)
             if is_new_product or force_refresh:
-                await self.cache_service.save_analysis_to_cache(hs_code, product_name, state.final_result)
+                await self.cache_service.save_analysis_to_cache(hs_code, product_name, result)
                 print(f"💾 분석 결과 캐시에 저장")
             
-            print(f"✅ 분석 완료 - 소요시간: {state.processing_time_ms}ms")
-            return state.final_result
+            print(f"✅ 분석 완료")
+            return result
             
         except Exception as e:
             print(f"❌ 분석 실패: {e}")
