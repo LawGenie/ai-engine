@@ -37,41 +37,228 @@ class LlmSummaryService:
         self.openai_client = AsyncOpenAI()
         self.cache_ttl = 86400  # 24시간
         
-        # GPT 프롬프트 템플릿
+        # GPT 프롬프트 템플릿 (Citations 포함)
         self.summary_prompt_template = """
-HS코드 {hs_code}에 해당하는 상품 "{product_name}"의 미국 수입 규정을 분석하여 다음 형식으로 요약해주세요:
+You are an expert US import compliance analyst. Analyze the import regulations for product "{product_name}" (HS Code: {hs_code}) based on the following official sources.
 
-다음 문서들을 분석:
+## Available Sources (with URLs):
 {documents}
 
-응답 형식 (JSON):
+## Your Task:
+Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For each requirement, document, or recommendation, include the source URL(s) that support it.
+
+## Response Format (JSON):
 {{
-    "critical_requirements": ["필수 요구사항 1", "필수 요구사항 2"],
-    "required_documents": ["필수 서류 1", "필수 서류 2"],
-    "compliance_steps": ["1단계: ...", "2단계: ..."],
+    "critical_requirements": [
+        {{
+            "requirement": "Specific requirement description",
+            "agency": "FDA/USDA/EPA/etc",
+            "source_url": "https://...",
+            "severity": "mandatory/recommended",
+            "penalty_if_violated": "Brief description of consequences",
+            "effective_date": "YYYY-MM-DD (when this regulation took effect)",
+            "last_updated": "YYYY-MM-DD (most recent update)"
+        }}
+    ],
+    "required_documents": [
+        {{
+            "document": "Document name",
+            "issuing_authority": "Who issues this",
+            "source_url": "https://...",
+            "estimated_time": "Processing time",
+            "notes": "Important details"
+        }}
+    ],
+    "compliance_steps": [
+        {{
+            "step": 1,
+            "action": "Specific action to take",
+            "responsible_party": "Who should do this",
+            "source_url": "https://...",
+            "estimated_duration": "Time needed",
+            "dependencies": ["Previous steps if any"]
+        }}
+    ],
     "estimated_costs": {{
-        "certification": "예상 비용",
-        "testing": "예상 비용",
-        "legal_review": "예상 비용",
-        "total": "총 예상 비용"
+        "certification": {{"min": 500, "max": 1000, "currency": "USD", "source_url": "https://..."}},
+        "testing": {{"min": 300, "max": 800, "currency": "USD", "source_url": "https://..."}},
+        "legal_review": {{"min": 200, "max": 500, "currency": "USD", "source_url": "https://..."}},
+        "total": {{"min": 1000, "max": 2300, "currency": "USD"}},
+        "notes": "Cost estimates based on typical cases"
     }},
-    "timeline": "예상 소요 시간",
-    "risk_factors": ["위험 요소 1", "위험 요소 2"],
-    "recommendations": ["권고사항 1", "권고사항 2"],
-    "confidence_score": 0.85
+    "timeline": {{
+        "minimum_days": 30,
+        "typical_days": 45,
+        "maximum_days": 60,
+        "critical_path": ["Step 1", "Step 2", "Step 3"],
+        "source_url": "https://..."
+    }},
+    "risk_factors": [
+        {{
+            "risk": "Specific risk description",
+            "likelihood": "high/medium/low",
+            "impact": "high/medium/low",
+            "mitigation": "How to mitigate this risk",
+            "source_url": "https://..."
+        }}
+    ],
+    "recommendations": [
+        {{
+            "recommendation": "Actionable recommendation",
+            "priority": "high/medium/low",
+            "rationale": "Why this is important",
+            "source_url": "https://..."
+        }}
+    ],
+    "labeling_requirements": [
+        {{
+            "element": "Ingredient list/Country of origin/etc",
+            "requirement": "Specific requirement",
+            "agency": "FDA/FTC/etc",
+            "source_url": "https://...",
+            "format": "Required format",
+            "placement": "Where on package",
+            "language": "English/Bilingual",
+            "penalties": "Consequences if non-compliant"
+        }}
+    ],
+    "prohibited_restricted_substances": [
+        {{
+            "substance": "Chemical name",
+            "status": "prohibited/restricted",
+            "max_concentration": "If restricted",
+            "agency": "Regulating agency",
+            "source_url": "https://...",
+            "alternatives": ["Safe alternatives if available"]
+        }}
+    ],
+    "prior_notifications": [
+        {{
+            "type": "FDA Prior Notice/EPA notification/etc",
+            "required_for": "Product categories",
+            "deadline": "When to submit",
+            "submission_method": "How to submit",
+            "source_url": "https://...",
+            "processing_time": "Expected time",
+            "consequences_if_missed": "What happens"
+        }}
+    ],
+    "testing_requirements": [
+        {{
+            "test": "Test name",
+            "required_by": "Agency",
+            "frequency": "How often",
+            "accredited_labs": ["Lab names"],
+            "cost_per_test": {{"min": 200, "max": 500, "currency": "USD"}},
+            "turnaround_time": "Days",
+            "source_url": "https://...",
+            "pass_criteria": "Acceptance criteria"
+        }}
+    ],
+    "third_party_certifications": [
+        {{
+            "certification": "Certification name",
+            "type": "mandatory/voluntary",
+            "purpose": "What it certifies",
+            "cost_range": {{"min": 1000, "max": 5000, "currency": "USD"}},
+            "validity": "Duration",
+            "recognized_bodies": ["Certifying organizations"],
+            "source_url": "https://...",
+            "market_advantage": "Business benefit"
+        }}
+    ],
+    "customs_clearance": {{
+        "entry_filing": {{
+            "deadline": "15 days after arrival",
+            "required_forms": ["Form names"],
+            "source_url": "https://..."
+        }},
+        "bonds_required": {{
+            "type": "Single/Continuous",
+            "amount": "Dollar amount",
+            "source_url": "https://..."
+        }},
+        "inspection_probability": "high/medium/low with factors"
+    }},
+    "state_requirements": [
+        {{
+            "state": "California/New York/etc",
+            "requirement": "Specific state requirement",
+            "applies_to": "Product categories",
+            "source_url": "https://...",
+            "penalty": "State-level penalties"
+        }}
+    ],
+    "key_agencies": [
+        {{
+            "agency": "FDA/USDA/EPA/etc",
+            "role": "What they regulate",
+            "contact": "Contact information if available",
+            "website": "Official website URL"
+        }}
+    ],
+    "regulatory_updates": {{
+        "recent_changes": [
+            {{
+                "date": "YYYY-MM-DD",
+                "agency": "Agency name",
+                "change": "What changed",
+                "impact": "How it affects this product",
+                "effective_date": "When it takes effect",
+                "source_url": "https://..."
+            }}
+        ],
+        "pending_legislation": "Any upcoming changes to watch"
+    }},
+    "confidence_score": 0.85,
+    "analysis_notes": "Any important caveats or additional context",
+    "data_completeness": {{
+        "sources_found": 5,
+        "sources_expected": 8,
+        "missing_areas": ["Areas where data is lacking"],
+        "recommendation": "Consult customs broker/attorney if needed"
+    }}
 }}
 
-중요 사항:
-- critical_requirements: 반드시 준수해야 하는 요구사항 (최대 5개)
-- required_documents: 제출해야 하는 서류 (최대 8개)
-- compliance_steps: 단계별 준수 절차 (최대 6단계)
-- estimated_costs: 구체적인 비용 범위 제시 (예: "$500-1,000")
-- timeline: 실제적인 소요 시간 (예: "4-6주")
-- risk_factors: 수입 실패 위험 요소
-- recommendations: 실행 가능한 권고사항
-- confidence_score: 0.0-1.0 사이의 신뢰도
+## Guidelines:
+1. **Citations**: Every claim MUST include a source_url from the provided sources
+2. **Specificity**: Use exact numbers, dates, and requirements (not vague terms)
+3. **Actionability**: Each step should be clear enough to execute immediately
+4. **Prioritization**: Order items by importance/urgency
+5. **Risk Assessment**: Be realistic about potential issues
+6. **Cost Accuracy**: Provide ranges based on typical cases, cite sources
+7. **Timeline Realism**: Account for government processing times
+8. **Agency Identification**: Clearly identify which agency regulates what
+9. **Confidence**: Lower confidence if sources are limited or contradictory
+10. **Product-Specific**: Tailor advice to the specific HS code and product category
+11. **Labeling Focus**: Pay special attention to labeling requirements (critical for customs)
+12. **Prohibited Substances**: Explicitly identify any banned/restricted ingredients
+13. **Prior Notice**: Highlight any pre-arrival notification requirements
+14. **Testing**: Specify which tests are mandatory vs recommended
+15. **State Laws**: Include California Prop 65 and other major state requirements
+16. **Practical Costs**: Include all costs (testing, certification, legal, bonds, insurance)
+17. **Customs Reality**: Mention inspection probability and common detention reasons
+18. **Market Access**: Note retailer-specific requirements (Amazon, Walmart, etc)
+19. **Updates**: Flag recent regulatory changes that may affect compliance
+20. **Completeness**: Indicate data gaps and recommend professional consultation when needed
+21. **Dates**: Extract effective_date and last_updated from source data when available (FDA uses report_date, recall_initiation_date)
+22. **Recency**: Prioritize more recent regulations and flag outdated information
 
-JSON 형식으로만 응답하세요.
+## Important:
+- If information is missing from sources, indicate "Not found in provided sources"
+- Do not make up URLs - only use URLs from the provided sources
+- If multiple sources conflict, note the discrepancy
+- Focus on US import requirements only
+- Prioritize official government sources over general information
+
+## JSON Formatting Rules (CRITICAL):
+- **Escape Special Characters**: All quotes, newlines, and backslashes in strings MUST be properly escaped
+- **No Line Breaks in Strings**: Keep all text in single lines within JSON strings (no \\n unless escaped)
+- **Short Text**: Keep requirement/recommendation texts under 200 characters each
+- **Valid Strings**: Ensure all strings are properly closed with double quotes
+- **Test Your JSON**: The output must be valid JSON parseable by standard parsers
+
+Return ONLY valid, parseable JSON. No markdown, no comments, no additional text.
 """
     
     async def summarize_regulations(
@@ -186,8 +373,15 @@ JSON 형식으로만 응답하세요.
             
             response_time = (datetime.now() - start_time).total_seconds()
             
-            # 응답 파싱
-            result = json.loads(response.choices[0].message.content)
+            # 응답 파싱 (JSON 파싱 에러 방지)
+            try:
+                content = response.choices[0].message.content
+                result = json.loads(content)
+            except json.JSONDecodeError as json_err:
+                print(f"❌ JSON 파싱 실패: {json_err}")
+                print(f"📄 GPT 응답 내용 (처음 500자): {content[:500] if content else 'None'}")
+                # JSON 파싱 실패 시 빈 결과 반환
+                return None
             
             # 메타데이터 추가
             result["tokens_used"] = response.usage.total_tokens
@@ -198,6 +392,9 @@ JSON 형식으로만 응답하세요.
             
             return result
             
+        except json.JSONDecodeError as json_err:
+            print(f"❌ GPT 요약 실패 (JSON 파싱): {json_err}")
+            return None
         except Exception as e:
             print(f"❌ GPT 요약 실패: {e}")
             return None

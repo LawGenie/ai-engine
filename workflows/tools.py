@@ -23,6 +23,8 @@ from abc import ABC, abstractmethod
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
 from app.services.requirements.data_gov_api import DataGovAPIService
+from app.services.requirements.backend_api_service import get_backend_service
+from app.services.requirements.hs_code_agency_ai_mapper import get_hs_code_mapper
 from app.services.requirements.env_manager import env_manager
 
 
@@ -105,6 +107,13 @@ class RequirementsTools:
         except Exception as e:
             print(f"⚠️ DataGovAPIService 초기화 실패: {e}")
             self.data_gov_api = None
+        
+        # 백엔드 API 서비스 (새로운 통합 방식)
+        try:
+            self.backend_api = get_backend_service()
+        except Exception as e:
+            print(f"⚠️ BackendAPIService 초기화 실패: {e}")
+            self.backend_api = None
         
         try:
             self.precedent_collector = self._init_cbp_collector()
@@ -213,28 +222,132 @@ class RequirementsTools:
             }
         }
 
-    def _get_target_agencies_for_hs_code(self, hs_code: str) -> Dict[str, Any]:
-        """HS 코드를 기반으로 타겟 기관 및 검색 전략 반환"""
+    async def _get_target_agencies_for_hs_code(self, hs_code: str, product_name: str = "") -> Dict[str, Any]:
+        """
+        HS 코드를 기반으로 타겟 기관 및 검색 전략 반환
+        
+        우선순위:
+        1. 하드코딩 매핑 (빠름, 신뢰도 높음)
+        2. 백엔드 DB 조회 (캐시된 AI 매핑)
+        3. AI 생성 매핑 (새로운 HS 코드)
+        4. 기본 매핑 (모든 기관)
+        """
         # HS 코드에서 4자리 코드 추출
         hs_4digit = hs_code.split('.')[0] if '.' in hs_code else hs_code[:4]
         
-        # 매핑에서 해당 코드 찾기
+        # 1. 하드코딩 매핑 확인 (가장 빠름)
         mapping = self.hs_code_agency_mapping.get(hs_4digit, {})
         
-        if not mapping:
-            # 기본 매핑 (모든 기관 검색)
+        if mapping:
+            print(f"✅ 하드코딩 매핑 사용 - HS: {hs_code}")
             return {
-                "primary_agencies": ["FDA", "USDA", "EPA", "FCC", "CPSC"],
-                "secondary_agencies": [],
-                "search_keywords": [],
-                "requirements": [],
-                "confidence": 0.3
+                **mapping,
+                "confidence": 0.9,
+                "source": "hardcoded"
             }
         
+        # 2. 백엔드 DB에서 AI 매핑 조회 또는 생성
+        try:
+            if self.backend_api:
+                ai_mapping = await self._get_or_generate_ai_mapping(hs_code, product_name)
+                if ai_mapping and ai_mapping.get("primary_agencies"):
+                    print(f"✅ AI 매핑 사용 - HS: {hs_code}, 신뢰도: {ai_mapping.get('confidence', 0):.2f}")
+                    return ai_mapping
+        except Exception as e:
+            print(f"⚠️ AI 매핑 조회/생성 실패: {e}")
+        
+        # 3. 기본 매핑 (HS 코드 챕터별 추론)
+        hs_chapter = hs_4digit[:2]  # HS 코드 앞 2자리 (챕터)
+        
+        # HS 챕터별 기본 기관 추론
+        if hs_chapter in ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24"]:
+            # 농식품 (01-24장)
+            default_agencies = ["FDA", "USDA"]
+        elif hs_chapter in ["28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38"]:
+            # 화학제품 (28-38장)
+            default_agencies = ["FDA", "EPA"]
+        elif hs_chapter in ["84", "85", "90"]:
+            # 전기전자 (84, 85, 90장)
+            default_agencies = ["FCC", "EPA"]
+        elif hs_chapter in ["94", "95"]:
+            # 가구, 완구 (94, 95장)
+            default_agencies = ["CPSC"]
+        else:
+            # 기타 - 최소 3개 기관
+            default_agencies = ["FDA", "EPA", "CBP"]
+        
+        print(f"⚠️ HS 코드 {hs_code} 매핑 없음 - 챕터 {hs_chapter} 기반 추론: {default_agencies}")
         return {
-            **mapping,
-            "confidence": 0.9
+            "primary_agencies": default_agencies,
+            "secondary_agencies": [],
+            "search_keywords": [],
+            "requirements": [],
+            "confidence": 0.4,  # 낮은 신뢰도
+            "source": "chapter_based_inference"
         }
+    
+    async def _get_or_generate_ai_mapping(self, hs_code: str, product_name: str) -> Optional[Dict[str, Any]]:
+        """백엔드에서 AI 매핑 조회 또는 생성"""
+        try:
+            import httpx
+            
+            # 백엔드 API 호출 (AI Engine을 통해 생성하고 DB에 저장)
+            url = f"{self.backend_api.base_url}/api/hs-code-agency-mappings/search"
+            params = {"hsCode": hs_code}
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, params=params)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # DB에 있으면 반환
+                    if data:
+                        return self._parse_backend_mapping(data)
+                
+                # DB에 없으면 AI로 생성 요청
+                print(f"🤖 AI 매핑 생성 요청 - HS: {hs_code}")
+                
+                # 백엔드가 AI Engine을 호출하여 생성하도록 요청
+                generate_url = f"{self.backend_api.base_url}/api/hs-code-agency-mappings/generate"
+                generate_data = {
+                    "hsCode": hs_code,
+                    "productName": product_name,
+                    "productCategory": ""
+                }
+                
+                response = await client.post(generate_url, json=generate_data)
+                
+                if response.status_code in [200, 201]:
+                    data = response.json()
+                    return self._parse_backend_mapping(data)
+                    
+        except Exception as e:
+            print(f"⚠️ 백엔드 매핑 조회/생성 실패: {e}")
+        
+        return None
+    
+    def _parse_backend_mapping(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """백엔드 매핑 데이터 파싱"""
+        try:
+            import json
+            
+            agencies_json = data.get("recommendedAgencies", "{}")
+            if isinstance(agencies_json, str):
+                agencies_data = json.loads(agencies_json)
+            else:
+                agencies_data = agencies_json
+            
+            return {
+                "primary_agencies": agencies_data.get("primary_agencies", []),
+                "secondary_agencies": agencies_data.get("secondary_agencies", []),
+                "search_keywords": agencies_data.get("search_keywords", []),
+                "requirements": agencies_data.get("key_requirements", []),
+                "confidence": float(data.get("confidenceScore", 0.5)),
+                "source": "ai_generated"
+            }
+        except Exception as e:
+            print(f"⚠️ 백엔드 매핑 파싱 실패: {e}")
+            return {}
 
     def _extract_keywords_from_product(self, product_name: str, product_description: str = "") -> List[str]:
         """상품명과 설명에서 핵심 키워드 추출"""
@@ -321,6 +434,20 @@ class RequirementsTools:
         
         return queries
 
+    def _build_fullname_queries(self, product_name: str, hs_code: str, target_agencies: Dict[str, Any]) -> Dict[str, str]:
+        """상품명 전체 검색 쿼리 생성 (3단계)"""
+        queries = {}
+        
+        # 주요 기관별 상품명 전체 검색
+        for agency in target_agencies.get("primary_agencies", []):
+            agency_lower = agency.lower()
+            
+            # 상품명 전체로 포괄적 검색
+            queries[f"{agency}_fullname_import"] = f"site:{agency_lower}.gov \"{product_name}\" import requirements"
+            queries[f"{agency}_fullname_regulations"] = f"site:{agency_lower}.gov \"{product_name}\" regulations compliance"
+        
+        return queries
+    
     def _build_phase_specific_queries(self, product_name: str, hs_code: str, target_agencies: Dict[str, Any]) -> Dict[str, str]:
         """Phase 2-4 전용 검색 쿼리 생성"""
         queries = {}
@@ -685,7 +812,7 @@ class RequirementsTools:
         }
     
     async def search_requirements_hybrid(self, hs_code: str, product_name: str, product_description: str = "") -> Dict[str, Any]:
-        """하이브리드 검색: Data.gov API + Tavily Search"""
+        """하이브리드 검색: Backend API (우선) + Tavily Search (보조)"""
         print(f"\n🚀 [HYBRID] 하이브리드 검색 시작")
         print(f"  📋 HS코드: {hs_code}")
         print(f"  📦 상품명: {product_name}")
@@ -697,51 +824,90 @@ class RequirementsTools:
             "api_results": {},
             "web_results": {},
             "combined_results": {},
-            "search_methods": []
+            "search_methods": [],
+            "citations": []  # 출처 정보 추가
         }
         
-        # 1. Data.gov API 검색 (HS코드 직접 검색)
+        # 1. Backend API 검색 (우선 - 정부 API 통합 수집)
         try:
-            print(f"\n  🔍 1단계: Data.gov API 검색")
-            if not self.data_gov_api:
-                print(f"    ⚠️ DataGovAPIService가 초기화되지 않음 - 모의 데이터 사용")
-                api_results = {
-                    "hs_code": hs_code,
-                    "product_name": product_name,
-                    "error": "DataGovAPIService not initialized",
-                    "total_requirements": 0,
-                    "agencies": {}
-                }
+            print(f"\n  🔍 1단계: Backend API 검색 (정부 API 통합)")
+            if not self.backend_api:
+                print(f"    ⚠️ BackendAPIService가 초기화되지 않음 - 대체 방식 사용")
+                # 백엔드 API 없으면 기존 방식 사용
+                if self.data_gov_api:
+                    api_results = await self.data_gov_api.search_requirements_by_hs_code(hs_code, product_name)
+                    results["search_methods"].append("data_gov_api_fallback")
+                else:
+                    api_results = {
+                        "hs_code": hs_code,
+                        "product_name": product_name,
+                        "error": "No API service available",
+                        "total_requirements": 0,
+                        "agencies": {}
+                    }
             else:
-                api_results = await self.data_gov_api.search_requirements_by_hs_code(hs_code, product_name)
+                # 백엔드 API 호출
+                backend_response = await self.backend_api.collect_requirements(
+                    product=product_name,
+                    hs_code=hs_code,
+                    include_raw_data=False
+                )
+                
+                # AI 분석용 포맷으로 변환
+                api_results = self.backend_api.format_for_ai_analysis(backend_response)
+                results["search_methods"].append("backend_api")
+                
+                # Citations 추출
+                results["citations"] = backend_response.get("citations", [])
+                print(f"    📚 출처: {len(results['citations'])}개")
+            
             results["api_results"] = api_results
-            results["search_methods"].append("data_gov_api")
-            print(f"    ✅ API 검색 완료: {api_results.get('total_requirements', 0)}개 요구사항")
+            total_reqs = api_results.get('requirements_summary', {}).get('total', 0) or api_results.get('total_requirements', 0)
+            print(f"    ✅ API 검색 완료: {total_reqs}개 요구사항")
+            
         except Exception as e:
             print(f"    ❌ API 검색 실패: {e}")
             results["api_results"] = {"error": str(e)}
         
-        # 2. Tavily Search (HS 코드 기반 + 키워드 기반 복합 검색)
+        # 2. Tavily Search (타겟 기관 기반 검색)
         try:
-            print(f"\n  🔍 2단계: HS 코드 기반 + 키워드 기반 복합 검색")
+            print(f"\n  🔍 2단계: Tavily Search (타겟 기관 기반)")
             
-            # HS 코드 기반 타겟 기관 분석
-            target_agencies = self._get_target_agencies_for_hs_code(hs_code)
+            # HS 코드 기반 타겟 기관 분석 (AI 매핑 포함)
+            target_agencies = await self._get_target_agencies_for_hs_code(hs_code, product_name)
+            
+            # AI 매핑이 있으면 해당 기관만 검색, 없으면 전체 검색
+            if target_agencies.get("source") in ["hardcoded", "ai_generated"]:
+                print(f"  ✅ 타겟 기관 확정 ({target_agencies.get('source')}): {target_agencies.get('primary_agencies')}")
+                print(f"  💰 Tavily 검색 최적화: 타겟 기관만 검색")
+            else:
+                print(f"  ⚠️ 타겟 기관 불명확 ({target_agencies.get('source')})")
+                print(f"  💸 Tavily 검색 확장: 모든 기관 검색 (비용 증가)")
             
             # 상품명/설명에서 키워드 추출
             keywords = self._extract_keywords_from_product(product_name, product_description)
             
-            # HS 코드 기반 기본 검색 쿼리 생성
+            # 3단계 검색 쿼리 생성
+            # 1단계: HS 코드 기반 검색 (가장 정확)
             hs_queries = self._build_hs_code_based_queries(product_name, hs_code, target_agencies)
             
-            # 키워드 기반 추가 검색 쿼리 생성
+            # 2단계: AI 키워드 기반 검색 (정확도 높음)
             keyword_queries = self._build_keyword_based_queries(product_name, keywords, target_agencies)
+            
+            # 3단계: 상품명 전체 검색 (포괄적)
+            fullname_queries = self._build_fullname_queries(product_name, hs_code, target_agencies)
             
             # Phase 2-4 전용 검색 쿼리 생성
             phase_queries = self._build_phase_specific_queries(product_name, hs_code, target_agencies)
             
             # 복합 검색 쿼리 병합
-            web_queries = {**hs_queries, **keyword_queries, **phase_queries}
+            web_queries = {**hs_queries, **keyword_queries, **fullname_queries, **phase_queries}
+            
+            print(f"  📊 3단계 검색 쿼리 구성:")
+            print(f"    1️⃣ HS 코드 기반: {len(hs_queries)}개")
+            print(f"    2️⃣ AI 키워드 기반: {len(keyword_queries)}개")
+            print(f"    3️⃣ 상품명 전체: {len(fullname_queries)}개")
+            print(f"    ➕ Phase 2-4: {len(phase_queries)}개")
             
             print(f"  🎯 타겟 기관: {', '.join(target_agencies.get('primary_agencies', []))}")
             print(f"  📊 검색 신뢰도: {target_agencies.get('confidence', 0):.1%}")
@@ -799,6 +965,10 @@ class RequirementsTools:
         combined_results = self._combine_search_results(hs_code, results["api_results"], results["web_results"])
         combined_results["target_agencies"] = target_agencies  # 타겟 기관 정보 추가
         combined_results["extracted_keywords"] = keywords  # 추출된 키워드 정보 추가
+        
+        # Citations를 combined_results에도 추가
+        combined_results["citations"] = results["citations"]
+        
         results["combined_results"] = combined_results
         
         print(f"\n✅ [HS 코드 + 키워드 복합 검색] 완료")
@@ -806,6 +976,7 @@ class RequirementsTools:
         print(f"  🎯 타겟 기관: {', '.join(target_agencies.get('primary_agencies', []))}")
         print(f"  📊 검색 신뢰도: {target_agencies.get('confidence', 0):.1%}")
         print(f"  🔑 추출된 키워드: {', '.join(keywords[:5])}")
+        print(f"  📚 출처(Citations): {len(results['citations'])}개")
         print(f"  📋 총 요구사항: {combined_results.get('total_requirements', 0)}개")
         print(f"  🏆 인증요건: {combined_results.get('total_certifications', 0)}개")
         print(f"  📄 필요서류: {combined_results.get('total_documents', 0)}개")

@@ -1,9 +1,31 @@
 """
-통합 워크플로우
-LangGraph와 커스텀 워크플로우를 통합한 단일 워크플로우
+통합 워크플로우 (Unified Workflow)
+
+이 워크플로우는 LangGraph를 사용하여 요구사항 분석을 수행합니다.
+
+워크플로우 단계:
+1. extract_keywords: 제품명에서 핵심 키워드 추출
+2. search_documents: 정부 기관 문서 검색 (무료 API + Tavily)
+3. hybrid_api_call: 하이브리드 API 호출 (HS코드 매핑 + 검색)
+4. scrape_documents: 문서 스크래핑
+5. consolidate_results: 결과 통합 (LLM 요약 포함)
+6. finalize_results: 최종 결과 포맷팅
+
+특징:
+- 병렬 처리 지원 (API 상태에 따라 자동 전환)
+- 다층 캐시 (메모리 + 디스크)
+- 에러 핸들링 및 폴백
+- 신뢰도 계산 (가중치 기반 + 5단계 등급)
+
+사용 예:
+    workflow = UnifiedRequirementsWorkflow()
+    result = await workflow.analyze_requirements(
+        hs_code="3304.99",
+        product_name="vitamin c serum"
+    )
 """
 
-from langgraph import StateGraph
+from langgraph.graph import StateGraph
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +36,7 @@ from app.services.requirements.error_handler import error_handler, WorkflowError
 from app.services.requirements.env_manager import env_manager
 from app.services.requirements.parallel_processor import parallel_processor, ProcessingTask, ProcessingMode
 from app.services.requirements.enhanced_cache_service import enhanced_cache
+from app.services.requirements.confidence_calculator import get_confidence_calculator
 
 @dataclass
 class UnifiedWorkflowState:
@@ -292,20 +315,30 @@ class UnifiedRequirementsWorkflow:
                 
                 # 분석 결과
                 "core_keywords": state.core_keywords,
+                
+                # Citations (출처 정보)
+                "citations": state.consolidated_results.get("citations", []) if state.consolidated_results else [],
+                
+                # 신뢰도 계산 (가중치 기반 + 5단계 등급)
+                "confidence_analysis": self._calculate_confidence_analysis(state),
+                
                 "search_results_summary": {
-                    "total_agencies": len(state.search_results),
-                    "agencies_processed": list(state.search_results.keys())
+                    "total_agencies": len(state.search_results) if state.search_results else 0,
+                    "agencies_processed": list(state.search_results.keys()) if state.search_results else []
                 },
                 "hybrid_api_summary": {
-                    "success": not state.hybrid_result.get("error"),
-                    "error": state.hybrid_result.get("error")
+                    "success": not state.hybrid_result.get("error") if state.hybrid_result else False,
+                    "error": state.hybrid_result.get("error") if state.hybrid_result else None
                 },
                 "scraping_summary": {
-                    "total_agencies_scraped": len(state.scraped_data),
+                    "total_agencies_scraped": len(state.scraped_data) if state.scraped_data else 0,
                     "successful_scraping": len([d for d in state.scraped_data.values() 
-                                               if d.get("status") == "success"])
+                                               if d.get("status") == "success"]) if state.scraped_data else 0
                 },
                 "consolidated_results": state.consolidated_results,
+                
+                # LLM 요약 (가장 중요!)
+                "llm_summary": state.consolidated_results.get("llm_summary") if state.consolidated_results else None,
                 
                 # 메타데이터
                 "detailed_metadata": state.detailed_metadata,
@@ -333,6 +366,58 @@ class UnifiedRequirementsWorkflow:
             }
         
         return state
+    
+    def _calculate_confidence_analysis(self, state: UnifiedWorkflowState) -> Dict[str, Any]:
+        """신뢰도 분석 계산"""
+        try:
+            calculator = get_confidence_calculator()
+            
+            # 데이터 추출
+            consolidated = state.consolidated_results or {}
+            citations = consolidated.get("citations", [])
+            
+            # 요건 데이터 (모든 항목)
+            requirements = []
+            if consolidated.get("certifications"):
+                requirements.extend(consolidated["certifications"])
+            if consolidated.get("documents"):
+                requirements.extend(consolidated["documents"])
+            if consolidated.get("sources"):
+                requirements.extend(consolidated["sources"])
+            
+            # 타겟 기관 (hybrid_result에서 추출)
+            target_agencies = []
+            target_agencies_data = None
+            hs_mapping_confidence = 0.5  # 기본값
+            
+            if state.hybrid_result:
+                target_agencies_data = state.hybrid_result.get("combined_results", {}).get("target_agencies", {})
+                if target_agencies_data:
+                    target_agencies = target_agencies_data.get("primary_agencies", [])
+                    hs_mapping_confidence = target_agencies_data.get("confidence", 0.5)
+            
+            # 신뢰도 계산
+            confidence_result = calculator.calculate_confidence(
+                sources=citations,
+                requirements=requirements,
+                target_agencies=target_agencies,
+                hs_code_mapping_confidence=hs_mapping_confidence
+            )
+            
+            print(f"  📊 신뢰도 분석: {confidence_result['score']:.2f} ({confidence_result['level']})")
+            
+            return confidence_result
+            
+        except Exception as e:
+            print(f"⚠️ 신뢰도 계산 실패: {e}")
+            return {
+                "score": 0.5,
+                "level": "중",
+                "level_enum": "MEDIUM",
+                "breakdown": {},
+                "factors": [],
+                "warnings": ["신뢰도 계산 실패"]
+            }
     
     async def analyze_requirements(
         self, 
@@ -452,7 +537,7 @@ class UnifiedRequirementsWorkflow:
             results = await parallel_processor.process_parallel(
                 tasks, 
                 mode=ProcessingMode.PARALLEL,
-                timeout=60.0
+                timeout=600.0  # 백엔드 API 타임아웃 10분
             )
             
             # 결과 통합

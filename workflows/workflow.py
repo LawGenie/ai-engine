@@ -1,4 +1,4 @@
-from langgraph import StateGraph
+from langgraph.graph import StateGraph
 from langchain.tools import tool
 from typing import Dict, Any, List
 from app.services.hs_code_service import HSCodeService

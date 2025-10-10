@@ -1,6 +1,27 @@
 """
 검색 서비스
-무료 정부 API + 유료 Tavily Search 조합으로 비용 최적화된 규정 검색
+
+무료 정부 API와 유료 Tavily Search를 조합하여 비용 최적화된 규정 검색을 제공합니다.
+
+검색 전략:
+1. 우선순위: 무료 API (FDA, USDA, EPA 등) 먼저 시도
+2. 폴백: Tavily Search (무료 API 실패 시)
+3. 캐시: SearchResultCache 테이블 사용 (1시간 TTL)
+
+지원 API:
+- FDA: api.fda.gov (drug/label, food/enforcement)
+- USDA: api.nal.usda.gov (ndb/search)
+- EPA: api.epa.gov (chemicals)
+- Tavily: api.tavily.com (유료, $0.001/검색)
+
+사용 예:
+    service = SearchService()
+    results = await service.search_requirements(
+        hs_code="3304.99",
+        product_name="serum",
+        agencies=["FDA", "EPA"],
+        search_queries={"FDA": ["serum import", "cosmetic regulation"]}
+    )
 """
 
 import asyncio
@@ -274,7 +295,18 @@ class SearchService:
             return []
     
     def _parse_api_response(self, data: Dict[str, Any], agency: str) -> List[Dict[str, Any]]:
-        """API 응답 파싱"""
+        """
+        API 응답 파싱 (기관별 커스텀 로직)
+        
+        각 기관 API는 응답 형식이 다르므로 개별 파싱 로직 필요:
+        - FDA: {"results": [{"openfda": {...}, "indications_and_usage": [...]}]}
+        - USDA: {"list": {"item": [{"name": "...", "group": "..."}]}}
+        - 기타: [{"title": "...", "description": "...", "url": "..."}] (기본 형식)
+        
+        Returns:
+            표준 형식의 검색 결과 리스트:
+            [{"title": str, "content": str, "url": str, "source": str, "agency": str}]
+        """
         results = []
         
         try:

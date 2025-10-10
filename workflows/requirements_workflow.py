@@ -1,6 +1,21 @@
 """
-요구사항 분석 워크플로우
-HS코드 기반 미국 수입요건 분석을 위한 통합 워크플로우
+요구사항 분석 워크플로우 (Wrapper)
+
+이 파일은 unified_workflow를 래핑하여 하위 호환성을 제공합니다.
+실제 분석 로직은 unified_workflow.py에 구현되어 있습니다.
+
+주요 기능:
+1. unified_workflow 호출
+2. 캐시 관리 (requirements_cache_service 사용)
+3. 응답 형식 변환 (RequirementsResponse 호환)
+
+사용 예:
+    workflow = RequirementsWorkflow()
+    result = await workflow.analyze_requirements(
+        hs_code="3304.99",
+        product_name="vitamin c serum",
+        force_refresh=False
+    )
 """
 
 from dataclasses import dataclass
@@ -83,6 +98,12 @@ class RequirementsWorkflow:
             return {"error": str(e), "status": "failed"}
     
     def _build_queries(self, hs_code: str, product_name: str, agencies: List[str]) -> Dict[str, List[str]]:
+        """
+        기관별 검색 쿼리 생성 (미사용 - 참고용)
+        
+        주의: 이 메서드는 현재 사용되지 않습니다.
+        실제 쿼리 생성은 unified_workflow에서 수행됩니다.
+        """
         queries = {}
         for agency in agencies:
             agency_queries = [
@@ -93,6 +114,12 @@ class RequirementsWorkflow:
         return queries
     
     def _extract_documents(self, search_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        검색 결과에서 문서 추출 (미사용 - 참고용)
+        
+        주의: 이 메서드는 현재 사용되지 않습니다.
+        실제 문서 추출은 unified_workflow에서 수행됩니다.
+        """
         documents = []
         for agency, search_result in search_results.items():
             for result in search_result.results:
@@ -197,7 +224,18 @@ class RequirementsWorkflow:
         return result
     
     def _calculate_metadata_completeness(self, result: Dict[str, Any], state) -> float:
-        """메타데이터 완성도 점수 계산 (0.0-1.0)"""
+        """
+        메타데이터 완성도 점수 계산 (0.0-1.0)
+        
+        평가 항목:
+        - 기본 정보 (hs_code, product_name): 각 0.125점
+        - 분석 결과 (recommended_agencies, search_results, llm_summary): 각 0.125점
+        - 메타데이터 (processing_time_ms, timestamp): 각 0.125점
+        - 보너스: 검색 결과에 실제 URL이 있으면 +0.125점
+        
+        Returns:
+            0.0 ~ 1.0 사이의 점수
+        """
         try:
             score = 0.0
             total_checks = 8

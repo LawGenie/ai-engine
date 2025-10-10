@@ -1,6 +1,7 @@
 """
 LangGraph Nodes for Requirements Analysis
 각 단계별로 처리하는 노드들
+(Updated: 2025-10-10 - LLM 요약 추가, 타입 에러 수정)
 """
 
 from typing import Dict, Any, List
@@ -217,34 +218,81 @@ class RequirementsNodes:
         print(f"  📋 8자리 HS코드: {hs_code_8digit}")
         print(f"  📋 6자리 HS코드: {hs_code_6digit}")
         
-        # 각 기관별 검색 쿼리 (8자리와 6자리 모두)
+        # 타겟 기관 결정 (AI 매핑 또는 하드코딩 또는 챕터 기반 추론)
+        target_agencies_data = await self.tools._get_target_agencies_for_hs_code(hs_code, product_name)
+        target_agencies = target_agencies_data.get("primary_agencies", [])
+        
+        # 타겟 기관이 없으면 최소한 FDA는 포함
+        if not target_agencies:
+            target_agencies = ["FDA"]
+            print(f"  ⚠️ 타겟 기관 없음 - 기본값 FDA 사용")
+        
+        print(f"  🎯 타겟 기관: {', '.join(target_agencies)} ({target_agencies_data.get('source', 'unknown')})")
+        print(f"  💰 Tavily 검색 최적화: {len(target_agencies)}개 기관만 검색")
+        
+        # 각 기관별 검색 쿼리 (8자리와 6자리 모두) - 타겟 기관만!
         search_queries = {}
         
-        # 8자리 HS코드 검색 (정확)
-        search_queries.update({
-            f"FDA_8digit": f"site:fda.gov import requirements {query_term} HS {hs_code_8digit}",
-            f"FCC_8digit": f"site:fcc.gov device authorization requirements {query_term} HS {hs_code_8digit}",
-            f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {query_term}",
-            f"USDA_8digit": f"site:usda.gov agricultural import requirements {query_term} HS {hs_code_8digit}",
-            f"EPA_8digit": f"site:epa.gov environmental regulations {query_term} HS {hs_code_8digit}",
-            f"CPSC_8digit": f"site:cpsc.gov consumer product safety {query_term} HS {hs_code_8digit}",
-            f"KCS_8digit": f"site:customs.go.kr Korea customs import requirements {query_term} HS {hs_code_8digit}",
-            f"MFDS_8digit": f"site:mfds.go.kr food drug safety import {query_term} HS {hs_code_8digit}",
-            f"MOTIE_8digit": f"site:motie.go.kr trade policy import requirements {query_term} HS {hs_code_8digit}"
-        })
+        # 기관별 사이트 도메인 매핑
+        agency_domains = {
+            "FDA": "fda.gov",
+            "FCC": "fcc.gov",
+            "CBP": "cbp.gov",
+            "USDA": "usda.gov",
+            "EPA": "epa.gov",
+            "CPSC": "cpsc.gov",
+            "KCS": "customs.go.kr",
+            "MFDS": "mfds.go.kr",
+            "MOTIE": "motie.go.kr"
+        }
         
-        # 6자리 HS코드 검색 (유사)
-        search_queries.update({
-            f"FDA_6digit": f"site:fda.gov import requirements {query_term} HS {hs_code_6digit}",
-            f"FCC_6digit": f"site:fcc.gov device authorization requirements {query_term} HS {hs_code_6digit}",
-            f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {query_term}",
-            f"USDA_6digit": f"site:usda.gov agricultural import requirements {query_term} HS {hs_code_6digit}",
-            f"EPA_6digit": f"site:epa.gov environmental regulations {query_term} HS {hs_code_6digit}",
-            f"CPSC_6digit": f"site:cpsc.gov consumer product safety {query_term} HS {hs_code_6digit}",
-            f"KCS_6digit": f"site:customs.go.kr Korea customs import requirements {query_term} HS {hs_code_6digit}",
-            f"MFDS_6digit": f"site:mfds.go.kr food drug safety import {query_term} HS {hs_code_6digit}",
-            f"MOTIE_6digit": f"site:motie.go.kr trade policy import requirements {query_term} HS {hs_code_6digit}"
-        })
+        # 타겟 기관만 검색 쿼리 생성
+        for agency in target_agencies:
+            domain = agency_domains.get(agency, f"{agency.lower()}.gov")
+            
+            # 8자리 HS코드 검색
+            if agency == "FDA":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} import requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "FCC":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} device authorization requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "CBP":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} import documentation requirements HS {hs_code_8digit} {query_term}"
+            elif agency == "USDA":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} agricultural import requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "EPA":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} environmental regulations {query_term} HS {hs_code_8digit}"
+            elif agency == "CPSC":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} consumer product safety {query_term} HS {hs_code_8digit}"
+            elif agency == "KCS":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} Korea customs import requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "MFDS":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} food drug safety import {query_term} HS {hs_code_8digit}"
+            elif agency == "MOTIE":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} trade policy import requirements {query_term} HS {hs_code_8digit}"
+        
+        # 6자리 HS코드 검색 (유사) - 타겟 기관만!
+        for agency in target_agencies:
+            domain = agency_domains.get(agency, f"{agency.lower()}.gov")
+            
+            # 6자리 HS코드 검색
+            if agency == "FDA":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} import requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "FCC":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} device authorization requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "CBP":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} import documentation requirements HS {hs_code_6digit} {query_term}"
+            elif agency == "USDA":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} agricultural import requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "EPA":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} environmental regulations {query_term} HS {hs_code_6digit}"
+            elif agency == "CPSC":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} consumer product safety {query_term} HS {hs_code_6digit}"
+            elif agency == "KCS":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} Korea customs import requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "MFDS":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} food drug safety import {query_term} HS {hs_code_6digit}"
+            elif agency == "MOTIE":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} trade policy import requirements {query_term} HS {hs_code_6digit}"
         
         search_results = {}
         
@@ -256,32 +304,33 @@ class RequirementsNodes:
             results = await self.tools.search_provider.search(query, max_results=15)  # 검색 결과를 15개로 확장
             print(f"    📊 {self.tools.search_provider.provider_name} 검색 결과: {len(results)}개")
             
+            # 검색 결과 처리
+            chosen_urls = []
+            
             if not results and self.tools.search_provider.provider_name == "disabled":
                 print(f"    🔇 검색 비활성화 모드: '{query}' 스킵됨")
+                agency_name = agency.split("_")[0]
+                default_url = default_urls.get(agency_name)
+                if default_url:
+                    chosen_urls = [default_url]
             elif not results:
                 print(f"    💡 팁: TAVILY_API_KEY를 설정하면 더 정확한 검색 결과를 얻을 수 있습니다.")
-            
-                # 여러 링크 수집 (최대 10개로 확장)
-                chosen_urls = []
-                
-                if results:
-                    # 각 결과 상세 출력
-                    for i, result in enumerate(results, 1):
-                        title = result.get('title', 'No title')
-                        url = result.get('url', 'No URL')
-                        print(f"      {i}. {title}")
-                        print(f"         URL: {url}")
-                    
-                    # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 10개 선택)
-                    chosen_urls = [result.get("url") for result in results[:10] if result.get("url")]
-                    print(f"    ✅ {agency} 공식 사이트 결과 {len(chosen_urls)}개 선택")
-            else:
-                # TavilySearch 실패 시 기본 URL 사용
-                agency_name = agency.split("_")[0]  # FDA_8digit -> FDA
+                agency_name = agency.split("_")[0]
                 default_url = default_urls.get(agency_name)
                 if default_url:
                     chosen_urls = [default_url]
                 print(f"    🔄 {agency} TavilySearch 실패, 기본 URL 사용: {default_url}")
+            else:
+                # 검색 성공 - 여러 링크 수집 (최대 10개)
+                for i, result in enumerate(results, 1):
+                    title = result.get('title', 'No title')
+                    url = result.get('url', 'No URL')
+                    print(f"      {i}. {title}")
+                    print(f"         URL: {url}")
+                
+                # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 10개 선택)
+                chosen_urls = [result.get("url") for result in results[:10] if result.get("url")]
+                print(f"    ✅ {agency} 공식 사이트 결과 {len(chosen_urls)}개 선택")
             
             search_results[agency] = {
                 "urls": chosen_urls,  # 여러 URL 저장
@@ -498,9 +547,17 @@ class RequirementsNodes:
                     print(f"        • {doc.get('name', 'Unknown')}")
                 
                 # HS코드 구분 정보 추가
+                # 안전하게 리스트로 변환 (타입 에러 방지)
+                certs_list = result.get("certifications", [])
+                docs_list = result.get("documents", [])
+                if not isinstance(certs_list, list):
+                    certs_list = []
+                if not isinstance(docs_list, list):
+                    docs_list = []
+                
                 result["hs_code_8digit"] = {
                     "urls": agency_data["8digit"]["urls"],
-                    "results": result.get("certifications", []) + result.get("documents", [])
+                    "results": certs_list + docs_list
                 }
                 result["hs_code_6digit"] = {
                     "urls": agency_data["6digit"]["urls"],
@@ -639,9 +696,14 @@ class RequirementsNodes:
         if hybrid and not hybrid.get("error"):
             combined = hybrid.get("combined_results", {})
             if combined:
-                hybrid_certifications = len(combined.get("certifications", []))
-                hybrid_documents = len(combined.get("documents", []))
-                hybrid_sources = len(combined.get("sources", []))
+                # 안전하게 int로 변환 (타입 에러 방지)
+                certs = combined.get("certifications", [])
+                docs = combined.get("documents", [])
+                srcs = combined.get("sources", [])
+                
+                hybrid_certifications = len(certs) if isinstance(certs, list) else 0
+                hybrid_documents = len(docs) if isinstance(docs, list) else 0
+                hybrid_sources = len(srcs) if isinstance(srcs, list) else 0
                 
                 all_certifications.extend(combined.get("certifications", []))
                 all_documents.extend(combined.get("documents", []))
@@ -697,12 +759,88 @@ class RequirementsNodes:
 
         print(f"📋 [METADATA] 결과 통합 상세 정보 저장됨 - 총 시간: {consolidation_time:.0f}ms, 최종 결과: 인증 {len(all_certifications)}개, 서류 {len(all_documents)}개")
 
-        # 상태 업데이트 (기존 상태 유지)
+        # Citations 추출 (백엔드 API에서 제공)
+        citations = []
+        if hybrid and not hybrid.get("error"):
+            citations = hybrid.get("citations", [])
+            print(f"  📚 Citations 추출: {len(citations)}개")
+        
+        # LLM 요약 생성
+        llm_summary = None
+        try:
+            from app.services.requirements.llm_summary_service import LlmSummaryService
+            llm_service = LlmSummaryService()
+            
+            # 통합된 데이터를 문서 형태로 변환
+            raw_documents = []
+            
+            # 인증요건을 문서로 변환
+            for cert in all_certifications:
+                raw_documents.append({
+                    "title": cert.get("name", "Unknown"),
+                    "content": cert.get("description", ""),
+                    "url": cert.get("source_url", ""),
+                    "agency": cert.get("agency", "")
+                })
+            
+            # 필요서류를 문서로 변환
+            for doc in all_documents:
+                raw_documents.append({
+                    "title": doc.get("name", "Unknown"),
+                    "content": doc.get("description", ""),
+                    "url": doc.get("source_url", ""),
+                    "agency": doc.get("agency", "")
+                })
+            
+            # Citations도 추가
+            for citation in citations:
+                raw_documents.append({
+                    "title": citation.get("title", ""),
+                    "content": citation.get("snippet", ""),
+                    "url": citation.get("url", ""),
+                    "agency": citation.get("agency", "")
+                })
+            
+            print(f"  🤖 LLM 요약 생성 중... (문서 {len(raw_documents)}개)")
+            
+            # summarize_regulations 메서드 호출
+            summary_result = await llm_service.summarize_regulations(
+                hs_code=request.hs_code if request else "unknown",
+                product_name=request.product_name if request else "unknown",
+                raw_documents=raw_documents
+            )
+            
+            # SummaryResult를 딕셔너리로 변환
+            if summary_result:
+                llm_summary = {
+                    "critical_requirements": summary_result.critical_requirements,
+                    "required_documents": summary_result.required_documents,
+                    "compliance_steps": summary_result.compliance_steps,
+                    "estimated_costs": summary_result.estimated_costs,
+                    "timeline": summary_result.timeline,
+                    "risk_factors": summary_result.risk_factors,
+                    "recommendations": summary_result.recommendations,
+                    "confidence_score": summary_result.confidence_score,
+                    "model_used": summary_result.model_used,
+                    "tokens_used": summary_result.tokens_used,
+                    "cost": summary_result.cost
+                }
+                print(f"  ✅ LLM 요약 생성 완료 - 신뢰도: {summary_result.confidence_score:.2f}")
+            
+        except Exception as e:
+            print(f"  ⚠️ LLM 요약 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            llm_summary = None
+        
+        # 상태 업데이트 (기존 상태 유지 + citations + llm_summary 추가)
         state["consolidated_results"] = {
             "certifications": all_certifications,
             "documents": all_documents,
             "sources": all_sources,
-            "precedents": cbp.get("precedents", []) if cbp else []
+            "llm_summary": llm_summary,
+            "precedents": cbp.get("precedents", []) if cbp else [],
+            "citations": citations  # 출처 정보 추가
         }
         state["precedents_meta"] = cbp
         state["next_action"] = "complete"
