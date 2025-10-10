@@ -103,32 +103,15 @@ class PrecedentsService:
             return {"cases": [], "sources": [], "error": str(e)}
     
     async def _scrape_cbp_data(self, hs_code: str) -> List[Dict[str, Any]]:
-        """CBP 데이터 스크래핑"""
-        # TODO: 실제 CBP 데이터 스크래핑 구현
-        return [
-            {
-                "case_id": "CBP001",
-                "hs_code": hs_code,
-                "outcome": "success",
-                "description": "성공적인 통관 사례",
-                "date": "2024-01-01",
-                "risk_level": "low"
-            }
-        ]
+        """CBP 데이터 스크래핑 - 더미 데이터 제거, 실제 구현 필요"""
+        # 더미 데이터 반환하지 않음!
+        # 실제 CBP 데이터는 precedents-analysis/cbp_scraper.py 사용
+        return []
     
     async def _scrape_court_data(self, hs_code: str) -> List[Dict[str, Any]]:
-        """법원 판례 스크래핑"""
-        # TODO: 실제 법원 판례 스크래핑 구현
-        return [
-            {
-                "case_id": "COURT001",
-                "hs_code": hs_code,
-                "outcome": "success",
-                "description": "법원에서 승소한 사례",
-                "date": "2024-01-01",
-                "risk_level": "low"
-            }
-        ]
+        """법원 판례 스크래핑 - 더미 데이터 제거, 실제 구현 필요"""
+        # 더미 데이터 반환하지 않음!
+        return []
     
     async def _analyze_with_ai(self, hs_code: str, precedents_data: Dict[str, Any]) -> Dict[str, Any]:
         """AI 모델로 판례 분석"""

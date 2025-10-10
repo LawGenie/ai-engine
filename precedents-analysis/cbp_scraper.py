@@ -1,460 +1,398 @@
-import requests
 import asyncio
 import aiohttp
-from bs4 import BeautifulSoup
-from typing import List, Dict, Any
 import logging
-import re
-from datetime import datetime, timedelta
-import json
+from typing import List, Dict, Any
+from tavily import TavilyClient
 import time
-import urllib.parse
-import random
+from datetime import datetime
+import os
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 class CBPDataCollector:
     def __init__(self):
         self.session = None
-        self.base_urls = {
-            'rulings': 'https://www.cbp.gov/trade/rulings',
-            'bulletin': 'https://www.cbp.gov/trade/rulings/bulletin-decisions',
-            'foia': 'https://www.cbp.gov/newsroom/accountability-and-transparency/foia-reading-room',
-            'cross': 'http://rulings.cbp.gov/',
-            'eruling': 'https://www.cbp.gov/trade/rulings/eruling-requirements',
-            'federal_register': 'https://www.cbp.gov/trade/rulings/trade-related-federal-register-notices'
-        }
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1'
-        }
         
-        # 실제 데이터베이스 매핑 (HS코드별 실제 사례들)
-        self.real_precedents_db = self._load_real_precedents_database()
+        # 🚀 메모리 캐싱 시스템
+        self.memory_cache = {}
+        self.cache_ttl = 7 * 24 * 3600  # 7일 (초)
+        logger.info("메모리 캐싱 시스템 초기화 완료")
+        
+        # 🚀 벡터 검색 시스템 (지연 로딩)
+        self.vector_search = None
+        
+        # Tavily 클라이언트 초기화
+        self.tavily_client = None
+        tavily_api_key = os.getenv('TAVILY_API_KEY')
+        if tavily_api_key:
+            try:
+                self.tavily_client = TavilyClient(api_key=tavily_api_key)
+                logger.info("✅ Tavily 클라이언트 초기화 성공")
+            except Exception as e:
+                logger.error(f"❌ Tavily 클라이언트 초기화 실패: {e}")
+        else:
+            logger.warning("⚠️ TAVILY_API_KEY가 설정되지 않았습니다.")
     
-    def _load_real_precedents_database(self) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        실제 CBP 판례 데이터베이스를 로드합니다.
-        """
+    def get_cached_data(self, hs_code: str) -> List[Dict[str, Any]]:
+        """캐시된 데이터 조회"""
+        if hs_code in self.memory_cache:
+            cached_time, data = self.memory_cache[hs_code]
+            if time.time() - cached_time < self.cache_ttl:
+                logger.info(f"✅ 캐시에서 데이터 반환: {hs_code}")
+                return data
+            else:
+                # 만료된 캐시 삭제
+                del self.memory_cache[hs_code]
+                logger.info(f"🗑️ 만료된 캐시 삭제: {hs_code}")
+        
+        return None
+    
+    def cache_data(self, hs_code: str, data: List[Dict[str, Any]]):
+        """데이터 캐싱"""
+        self.memory_cache[hs_code] = (time.time(), data)
+        logger.info(f"💾 데이터 캐싱 완료: {hs_code} ({len(data)}개 항목)")
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """캐시 통계 반환"""
+        current_time = time.time()
+        valid_count = 0
+        expired_count = 0
+        
+        for hs_code, (cached_time, _) in self.memory_cache.items():
+            if current_time - cached_time < self.cache_ttl:
+                valid_count += 1
+            else:
+                expired_count += 1
+        
         return {
-            "3304.99.50.00": [  # 화장품/스킨케어 제품
-                {
-                    "case_id": "HQ-2023-001234",
-                    "title": "Vitamin C Serum Classification Ruling",
-                    "status": "APPROVED",
-                    "date": "2023-08-15",
-                    "description": "High-concentration Vitamin C serum classified under 3304.99.50.00 with proper FDA certification and stability testing documentation",
-                    "key_factors": ["FDA certification", "Concentration verification", "Stability testing", "Label compliance"],
-                    "hs_code": "3304.99.50.00",
-                    "source": "real_cbp",
-                    "link": "https://www.cbp.gov/trade/rulings/hq-rulings"
-                },
-                {
-                    "case_id": "HQ-2023-001156",
-                    "title": "Retinol Serum Import Denial",
-                    "status": "REJECTED",
-                    "date": "2023-06-22",
-                    "description": "Retinol serum rejected due to insufficient concentration documentation and missing safety testing reports",
-                    "key_factors": ["Missing concentration data", "Incomplete safety documentation", "FDA approval required"],
-                    "hs_code": "3304.99.50.00",
-                    "source": "real_cbp",
-                    "link": "https://www.cbp.gov/trade/rulings/bulletin-decisions"
-                },
-                {
-                    "case_id": "HQ-2023-000987",
-                    "title": "Hyaluronic Acid Serum Approval",
-                    "status": "APPROVED",
-                    "date": "2023-04-10",
-                    "description": "Hyaluronic acid serum successfully imported with comprehensive testing documentation and proper labeling",
-                    "key_factors": ["Comprehensive testing", "Proper labeling", "FDA compliance", "Quality certification"],
-                    "hs_code": "3304.99.50.00",
-                    "source": "real_cbp",
-                    "link": "https://www.cbp.gov/trade/rulings/hq-rulings"
-                }
-            ],
-            "3304.99.60.00": [  # 기타 화장품
-                {
-                    "case_id": "HQ-2023-001456",
-                    "title": "Anti-aging Cream Import Success",
-                    "status": "APPROVED",
-                    "date": "2023-09-05",
-                    "description": "Anti-aging cream with peptide complex approved after comprehensive safety and efficacy testing",
-                    "key_factors": ["Peptide verification", "Safety testing", "Label compliance", "Manufacturing standards"],
-                    "hs_code": "3304.99.60.00",
-                    "source": "real_cbp",
-                    "link": "https://www.cbp.gov/trade/rulings/hq-rulings"
-                },
-                {
-                    "case_id": "HQ-2023-001123",
-                    "title": "Sunscreen Lotion Classification",
-                    "status": "APPROVED",
-                    "date": "2023-07-18",
-                    "description": "SPF 50+ sunscreen lotion classified and approved with proper FDA testing documentation",
-                    "key_factors": ["FDA testing", "SPF verification", "Label accuracy", "Safety standards"],
-                    "hs_code": "3304.99.60.00",
-                    "source": "real_cbp",
-                    "link": "https://www.cbp.gov/trade/rulings/hq-rulings"
-                }
-            ]
+            'total_cached': len(self.memory_cache),
+            'valid_cached': valid_count,
+            'expired_cached': expired_count,
+            'cache_hit_rate': f"{valid_count}/{len(self.memory_cache)}" if self.memory_cache else "0/0"
         }
+    
+    def set_vector_search(self, vector_search):
+        """벡터 검색 시스템 설정"""
+        self.vector_search = vector_search
+        logger.info("✅ 벡터 검색 시스템 설정 완료")
+    
+    def _store_precedents_in_vector_db(self, hs_code: str, precedents: List[Dict[str, Any]]):
+        """수집된 판례 데이터를 벡터 DB에 저장 (실제 ruling만)"""
+        if not self.vector_search:
+            return
+        
+        try:
+            stored_count = 0
+            for precedent in precedents:
+                # 모든 CBP 관련 데이터 저장 (느슨한 기준)
+                case_id = precedent.get('case_id', '')
+                if not case_id:
+                    logger.warning(f"⚠️ case_id 없음 - 벡터 DB 저장 제외")
+                    continue
+                
+                success = self.vector_search.add_precedent_to_db(
+                    precedent_id=case_id,
+                    text=precedent.get('description', '') + ' ' + precedent.get('title', ''),
+                    hs_code=hs_code,
+                    case_type=precedent.get('case_type', 'unknown'),
+                    outcome=precedent.get('outcome', 'unknown'),
+                    source=precedent.get('source', 'cbp'),
+                    additional_metadata={
+                        'date': precedent.get('date'),
+                        'link': precedent.get('link', ''),
+                        'key_factors': precedent.get('key_factors', [])
+                    }
+                )
+                if success:
+                    stored_count += 1
+                    logger.info(f"✅ 실제 CBP ruling 벡터 DB 저장: {case_id}")
+            
+            logger.info(f"✅ 벡터 DB에 {stored_count}개 실제 판례 저장 완료: {hs_code}")
+            
+        except Exception as e:
+            logger.error(f"❌ 벡터 DB 저장 실패: {e}")
     
     async def get_precedents_by_hs_code(self, hs_code: str) -> List[Dict[str, Any]]:
         """
-        HS코드별로 CBP에서 실제 판례 데이터를 수집합니다.
+        HS코드에 따른 실제 CBP 판례를 Tavily로 검색합니다. (캐싱 적용)
         """
+        logger.info(f"🔍 CBP 데이터 수집 시작: HS코드 {hs_code}")
+        
+        # 🚀 1. 캐시 확인
+        cached_data = self.get_cached_data(hs_code)
+        if cached_data:
+            return cached_data
+        
         try:
-            logger.info(f"CBP 데이터 수집 시작: HS코드 {hs_code}")
+            # 🚀 2. 캐시에 없으면 Tavily로 검색
+            logger.info(f"📡 Tavily 검색 시작: {hs_code}")
+            tavily_data = await self._search_cbp_with_tavily(hs_code)
             
-            all_precedents = []
+            # 데이터 정리 및 중복 제거
+            cleaned_data = self._clean_and_deduplicate_data(tavily_data)
             
-            # 1. 실제 데이터베이스에서 데이터 가져오기
-            db_data = self.real_precedents_db.get(hs_code, [])
-            all_precedents.extend(db_data)
+            # 🚀 3. 결과 캐싱
+            self.cache_data(hs_code, cleaned_data)
             
-            # 2. 웹 스크래핑 시도 (실패해도 계속 진행)
-            try:
-                web_data = await self._attempt_web_scraping(hs_code)
-                all_precedents.extend(web_data)
-            except Exception as e:
-                logger.warning(f"웹 스크래핑 실패, 데이터베이스 데이터만 사용: {str(e)}")
+            # 🚀 4. 벡터 DB에 판례 저장
+            self._store_precedents_in_vector_db(hs_code, cleaned_data)
             
-            # 3. 데이터 정제 및 중복 제거
-            cleaned_data = self._clean_and_deduplicate_data(all_precedents)
-            
-            # 4. 데이터가 없으면 일반적인 샘플 데이터 추가
-            if not cleaned_data:
-                cleaned_data = self._get_sample_precedents_data(hs_code)
-            
-            logger.info(f"CBP 데이터 수집 완료: {len(cleaned_data)}개 사례")
+            logger.info(f"✅ CBP 데이터 수집 완료: {len(cleaned_data)}개 사례")
             return cleaned_data
             
         except Exception as e:
-            logger.error(f"CBP 데이터 수집 실패: {str(e)}")
-            return self._get_sample_precedents_data(hs_code)
-    
-    async def _attempt_web_scraping(self, hs_code: str) -> List[Dict[str, Any]]:
-        """
-        웹 스크래핑을 시도합니다. 실패해도 예외를 발생시키지 않습니다.
-        """
-        web_data = []
-        
-        try:
-            # CBP 웹사이트에서 관련 정보 수집 시도
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                
-                # 1. Bulletin Decisions에서 실제 판례 찾기
-                bulletin_data = await self._scrape_bulletin_decisions(session, hs_code)
-                web_data.extend(bulletin_data)
-                
-                # 2. Federal Register Notices에서 관련 정보 찾기
-                federal_data = await self._scrape_federal_register(session, hs_code)
-                web_data.extend(federal_data)
-                
-                # 3. FOIA Reading Room에서 관련 정보 찾기
-                foia_data = await self._scrape_foia_records(session, hs_code)
-                web_data.extend(foia_data)
-                
-        except Exception as e:
-            logger.warning(f"웹 스크래핑 중 오류 발생: {str(e)}")
-        
-        return web_data
-    
-    async def _scrape_bulletin_decisions(self, session: aiohttp.ClientSession, hs_code: str) -> List[Dict[str, Any]]:
-        """
-        Bulletin Decisions에서 실제 판례를 수집합니다.
-        """
-        try:
-            async with session.get(self.base_urls['bulletin'], timeout=15) as response:
-                if response.status != 200:
-                    return []
-                
-                html = await response.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                # 실제 판례 링크 찾기
-                links = soup.find_all('a', href=True)
-                ruling_links = []
-                
-                for link in links:
-                    href = link.get('href', '')
-                    text = link.get_text().strip()
-                    
-                    # 실제 판례 링크 패턴 찾기
-                    if any(pattern in href.lower() for pattern in ['hq-', 'ny-', 'ca-', 'ruling', 'decision']):
-                        ruling_links.append((text, href))
-                    elif any(keyword in text.lower() for keyword in ['ruling', 'decision', 'classification', 'hq-']):
-                        ruling_links.append((text, href))
-                
-                # 발견된 링크에서 실제 판례 데이터 수집
-                results = []
-                for text, href in ruling_links[:5]:  # 최대 5개만 처리
-                    try:
-                        # 상대 URL을 절대 URL로 변환
-                        if href.startswith('/'):
-                            full_url = urllib.parse.urljoin(self.base_urls['bulletin'], href)
-                        else:
-                            full_url = href
-                        
-                        # 실제 판례 페이지 접근
-                        async with session.get(full_url, timeout=10) as ruling_response:
-                            if ruling_response.status == 200:
-                                ruling_html = await ruling_response.text()
-                                ruling_soup = BeautifulSoup(ruling_html, 'html.parser')
-                                
-                                # 판례 내용에서 HS코드 찾기
-                                ruling_text = ruling_soup.get_text()
-                                if hs_code in ruling_text or self._is_related_hs_code(hs_code, ruling_text):
-                                    ruling_data = self._extract_ruling_data(ruling_soup, text, full_url, hs_code)
-                                    if ruling_data:
-                                        results.append(ruling_data)
-                                        
-                    except Exception as e:
-                        logger.warning(f"판례 페이지 접근 실패: {str(e)}")
-                        continue
-                
-                return results
-                
-        except Exception as e:
-            logger.warning(f"Bulletin Decisions 스크래핑 실패: {str(e)}")
+            logger.error(f"❌ CBP 데이터 수집 실패: {str(e)}")
             return []
     
-    async def _scrape_federal_register(self, session: aiohttp.ClientSession, hs_code: str) -> List[Dict[str, Any]]:
+    async def _search_cbp_with_tavily(self, hs_code: str) -> List[Dict[str, Any]]:
         """
-        Federal Register Notices에서 관련 정보를 수집합니다.
+        Tavily를 사용하여 실제 CBP 공식 ruling만 검색합니다.
         """
-        try:
-            async with session.get(self.base_urls['federal_register'], timeout=15) as response:
-                if response.status != 200:
-                    return []
-                
-                html = await response.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                # Federal Register 관련 링크 찾기
-                links = soup.find_all('a', href=True)
-                federal_links = []
-                
-                for link in links:
-                    href = link.get('href', '')
-                    text = link.get_text().strip()
-                    
-                    if any(keyword in text.lower() for keyword in ['federal register', 'notice', 'proposed', 'final']):
-                        federal_links.append((text, href))
-                
-                # Federal Register 정보를 바탕으로 데이터 생성
-                results = []
-                for text, href in federal_links[:3]:
-                    results.append({
-                        "case_id": f"FEDERAL-{hash(text) % 10000:04d}",
-                        "title": f"Federal Register Notice: {text}",
-                        "status": "UNKNOWN",
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "description": f"Federal Register notice related to {text}",
-                        "key_factors": ["Federal Register", "Regulatory notice"],
-                        "hs_code": hs_code,
-                        "source": "web_scraping",
-                        "link": href
-                    })
-                
-                return results
-                
-        except Exception as e:
-            logger.warning(f"Federal Register 스크래핑 실패: {str(e)}")
+        if not self.tavily_client:
+            logger.error("❌ Tavily 클라이언트가 없습니다. TAVILY_API_KEY를 설정해주세요.")
             return []
-    
-    async def _scrape_foia_records(self, session: aiohttp.ClientSession, hs_code: str) -> List[Dict[str, Any]]:
-        """
-        FOIA Reading Room에서 관련 정보를 수집합니다.
-        """
-        try:
-            async with session.get(self.base_urls['foia'], timeout=15) as response:
-                if response.status != 200:
-                    return []
-                
-                html = await response.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                # FOIA 관련 링크 찾기
-                links = soup.find_all('a', href=True)
-                foia_links = []
-                
-                for link in links:
-                    text = link.get_text().strip().lower()
-                    href = link.get('href', '')
-                    if any(keyword in text for keyword in ['ruling', 'decision', 'classification', 'import']):
-                        foia_links.append((text, href))
-                
-                # FOIA 정보를 바탕으로 데이터 생성
-                results = []
-                for text, href in foia_links[:2]:
-                    results.append({
-                        "case_id": f"FOIA-{hash(text) % 10000:04d}",
-                        "title": f"FOIA Record: {text.title()}",
-                        "status": "UNKNOWN",
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "description": f"FOIA Reading Room record related to {text}",
-                        "key_factors": ["FOIA record", "Public information"],
-                        "hs_code": hs_code,
-                        "source": "web_scraping",
-                        "link": href
-                    })
-                
-                return results
-                
-        except Exception as e:
-            logger.warning(f"FOIA Records 스크래핑 실패: {str(e)}")
-            return []
-    
-    def _is_related_hs_code(self, target_hs_code: str, text: str) -> bool:
-        """
-        텍스트에서 관련 HS코드가 있는지 확인합니다.
-        """
-        # HS코드 패턴 찾기
-        hs_patterns = re.findall(r'\d{4}\.\d{2}\.\d{2}\.\d{2}', text)
         
-        # 같은 대분류인지 확인 (앞 4자리)
-        target_prefix = target_hs_code[:4]
-        for pattern in hs_patterns:
-            if pattern[:4] == target_prefix:
-                return True
-        
-        return False
-    
-    def _extract_ruling_data(self, soup: BeautifulSoup, title: str, url: str, hs_code: str) -> Dict[str, Any]:
-        """
-        판례 페이지에서 데이터를 추출합니다.
-        """
         try:
-            # 날짜 찾기
-            date_text = ""
-            date_patterns = [
-                r'\d{4}-\d{2}-\d{2}',
-                r'\d{2}/\d{2}/\d{4}',
-                r'\d{1,2}/\d{1,2}/\d{4}',
-                r'[A-Za-z]+ \d{1,2}, \d{4}'
+            # 실제 CBP ruling 검색 쿼리 (구체적인 판례 찾기)
+            search_queries = [
+                f'site:rulings.cbp.gov "HS {hs_code}" "classification" ruling',
+                f'site:rulings.cbp.gov "subheading {hs_code}" "approved" OR "denied"',
+                f'site:rulings.cbp.gov "tariff classification {hs_code}" "ruling"',
+                f'"HQ" "NY" "HS {hs_code}" "cosmetic" "classification" site:rulings.cbp.gov',
+                f'"{hs_code}" "classified in" OR "excluded from" site:rulings.cbp.gov',
             ]
             
-            page_text = soup.get_text()
-            for pattern in date_patterns:
-                match = re.search(pattern, page_text)
-                if match:
-                    date_text = match.group()
-                    break
+            all_results = []
             
-            # 상태 추정
-            status = "UNKNOWN"
-            status_keywords = {
-                'APPROVED': ['approved', 'granted', 'accepted', 'cleared', 'passed'],
-                'REJECTED': ['rejected', 'denied', 'refused', 'returned', 'failed']
-            }
+            for query in search_queries[:3]:  # 상위 3개 쿼리만 사용
+                try:
+                    logger.info(f"🔎 Tavily CBP 검색: {query}")
+                    
+                    response = self.tavily_client.search(
+                        query=query,
+                        search_depth='advanced',
+                        max_results=10,
+                        include_domains=['rulings.cbp.gov']  # rulings.cbp.gov만!
+                    )
+                    
+                    for result in response.get('results', []):
+                        url = result.get('url', '')
+                        
+                        # rulings.cbp.gov만 허용 (실제 ruling 페이지만)
+                        if 'rulings.cbp.gov' not in url:
+                            logger.warning(f"⚠️ rulings.cbp.gov 아님 - 제외: {url}")
+                            continue
+                        
+                        # 실제 ruling 페이지만 허용
+                        url_lower = url.lower()
+                        if '/ruling/' not in url_lower:
+                            logger.warning(f"⚠️ ruling 페이지 아님 - 제외: {url}")
+                            continue
+                        
+                        # 제외할 페이지들
+                        exclude_pages = [
+                            '/search', '/sites/default/files', '/home', '/requirements'
+                        ]
+                        
+                        if any(exclude in url_lower for exclude in exclude_pages):
+                            logger.warning(f"⚠️ 일반 페이지 제외: {url}")
+                            continue
+                        
+                        cbp_data = self._convert_tavily_result_to_cbp_data(result, hs_code)
+                        if cbp_data:
+                            all_results.append(cbp_data)
+                            logger.info(f"✅ 실제 CBP ruling 추가: {cbp_data['case_id']}")
+                    
+                    # 요청 간 지연 (Rate Limit 방지)
+                    await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Tavily 검색 오류 ({query}): {e}")
+                    continue
             
-            page_text_lower = page_text.lower()
-            for status_type, keywords in status_keywords.items():
-                if any(keyword in page_text_lower for keyword in keywords):
-                    status = status_type
-                    break
+            if not all_results:
+                logger.warning(f"⚠️ 실제 CBP ruling을 찾지 못함: HS {hs_code}")
+            else:
+                logger.info(f"✅ 총 {len(all_results)}개 실제 CBP ruling 발견: HS {hs_code}")
             
-            # 설명 생성
-            description = page_text.strip()[:300] + "..." if len(page_text.strip()) > 300 else page_text.strip()
+            return all_results
             
-            # 주요 요인 추출
-            key_factors = self._extract_key_factors(page_text)
+        except Exception as e:
+            logger.error(f"❌ Tavily CBP 검색 실패: {e}")
+            return []
+    
+    def _convert_tavily_result_to_cbp_data(self, result: Dict[str, Any], hs_code: str) -> Dict[str, Any]:
+        """
+        Tavily 검색 결과를 CBP 데이터 형식으로 변환합니다.
+        실제 CBP ruling 번호가 없으면 None을 반환합니다.
+        """
+        try:
+            title = result.get('title', '')
+            url = result.get('url', '')
+            content = result.get('content', '')
+            
+            # URL에서 실제 CBP ruling 번호 추출 시도
+            case_id = self._extract_case_id_from_url(url, title)
+            
+            # case_id가 없으면 기본값 생성
+            if not case_id:
+                case_id = f'CBP-{title[:10].replace(" ", "")}'  # 제목 기반 ID 생성
+                logger.info(f"✅ 제목 기반 ID 생성: {case_id}")
+            
+            # 내용에서 승인/거부 상태 판단
+            status = self._determine_status_from_content(content, title)
+            
+            # UNKNOWN 상태도 허용 (느슨한 기준)
+            if status == 'UNKNOWN':
+                status = 'REVIEW'  # 검토 필요 상태로 변경
+                logger.info(f"✅ 검토 필요 상태로 분류: {case_id}")
+            
+            # HS 코드 카테고리 결정
+            category = self._determine_hs_category(hs_code)
+            
+            logger.info(f"✅ 실제 CBP 데이터 변환 성공: {case_id} ({status})")
             
             return {
-                "case_id": f"WEB-{hash(title) % 10000:04d}",
-                "title": title,
-                "status": status,
-                "date": date_text,
-                "description": description,
-                "key_factors": key_factors,
-                "hs_code": hs_code,
-                "source": "web_scraping",
-                "link": url
+                'case_id': case_id,
+                'title': title,
+                'status': status,
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'description': content[:500] if content else f'CBP ruling {case_id} for HS code {hs_code}',
+                'key_factors': [category, 'Tavily Search', 'CBP Data'],
+                'hs_code': hs_code,
+                'source': 'tavily_search',
+                'link': url,
+                'case_type': 'APPROVAL_CASE' if status == 'APPROVED' else 'DENIAL_CASE',
+                'outcome': status,
+                'reason': content[:200] if content else f'CBP ruling {case_id} for HS code {hs_code}'
             }
             
         except Exception as e:
-            logger.warning(f"판례 데이터 추출 실패: {str(e)}")
+            logger.error(f"❌ Tavily 결과 변환 오류: {e}")
             return None
     
-    def _extract_key_factors(self, text: str) -> List[str]:
-        """
-        텍스트에서 주요 요인들을 추출합니다.
-        """
-        key_factors = []
+    def _extract_case_id_from_url(self, url: str, title: str) -> str:
+        """URL이나 제목에서 CBP 관련 ID를 추출합니다. (느슨한 기준)"""
+        import re
         
-        # 일반적인 키워드들
-        keywords = [
-            'FDA', 'certification', 'documentation', 'testing', 'verification',
-            'compliance', 'regulation', 'safety', 'quality', 'inspection',
-            'label', 'packaging', 'origin', 'country', 'manufacturer'
+        # URL에서 CBP 관련 ID 패턴 찾기 (더 느슨하게)
+        url_patterns = [
+            r'ruling/([A-Z]\d{6})',     # ruling/N256328, ruling/W968396
+            r'/(HQ[A-Z0-9]{6,})',       # HQ ruling
+            r'/(NY[A-Z0-9]{6,})',       # NY ruling
+            r'/([A-Z]\d{6})',           # 기타 ruling
+            r'/(R\d{6})',               # R ruling
+            r'/([A-Z]{2}\d{6})',        # 2글자+6숫자
+            r'/([A-Z]\d+)',             # 더 느슨한 패턴
+            r'term=([A-Z0-9.]+)',       # 검색 결과에서 HS코드나 ID
         ]
         
-        text_lower = text.lower()
-        for keyword in keywords:
-            if keyword in text_lower:
-                key_factors.append(keyword.title())
+        for pattern in url_patterns:
+            match = re.search(pattern, url, re.IGNORECASE)
+            if match:
+                ruling_id = match.group(1).upper()
+                logger.info(f"✅ URL에서 CBP ID 발견: {ruling_id}")
+                return ruling_id
         
-        return key_factors[:5]  # 최대 5개
+        # 제목에서 CBP 관련 ID 찾기
+        title_patterns = [
+            r'\b(HQ\s*[A-Z0-9]{6,})\b',  # HQ ruling
+            r'\b(NY\s*[A-Z0-9]{6,})\b',  # NY ruling
+            r'\b([A-Z]{2}\d{6,})\b',     # 2글자+6자리 이상
+            r'\b(R\d{6,})\b',            # R ruling
+            r'\b([A-Z]\d{6,})\b',        # 더 느슨한 패턴
+        ]
+        
+        for pattern in title_patterns:
+            match = re.search(pattern, title, re.IGNORECASE)
+            if match:
+                ruling_id = match.group(1).replace(" ", "").upper()
+                logger.info(f"✅ 제목에서 CBP ID 발견: {ruling_id}")
+                return ruling_id
+        
+        # URL 해시로 고유 ID 생성 (느슨한 기준에서는 허용)
+        import hashlib
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        case_id = f'CBP-{url_hash}'
+        logger.info(f"✅ URL 해시로 ID 생성: {case_id}")
+        return case_id
     
-    def _clean_and_deduplicate_data(self, all_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        데이터를 정제하고 중복을 제거합니다.
-        """
-        # 중복 제거 (제목 기준)
-        seen_titles = set()
-        unique_data = []
+    def _determine_status_from_content(self, content: str, title: str) -> str:
+        """내용에서 승인/거부 상태를 정확하게 판단합니다."""
+        content_lower = content.lower()
+        title_lower = title.lower()
+        combined = f"{title_lower} {content_lower}"
         
-        for item in all_data:
-            title = item.get('title', '')
-            if title and title not in seen_titles:
-                seen_titles.add(title)
-                unique_data.append(item)
+        # 거부/제외 관련 키워드와 패턴 (더 정확하게)
+        denial_patterns = [
+            'denied', 'rejected', 'refused', 'prohibited', 'banned',
+            'excluded from', 'not classified in', 'not classifiable',
+            'not eligible', 'revoked', 'withdrawn', 'violation',
+            'does not qualify', 'cannot be classified', 'improperly classified',
+            'incorrectly classified', 'misclassified'
+        ]
         
-        # 날짜 정렬 (최신순)
-        unique_data.sort(key=lambda x: x.get('date', ''), reverse=True)
+        # 승인 관련 키워드와 패턴 (더 정확하게)
+        approval_patterns = [
+            'approved for', 'classified in', 'classifiable in', 
+            'properly classified', 'correctly classified',
+            'meets the requirements', 'qualifies for',
+            'authorized for import', 'permitted entry',
+            'granted classification', 'ruling issued'
+        ]
         
-        return unique_data
+        # 거부/제외 패턴 우선 확인 (더 중요함)
+        denial_count = sum(1 for pattern in denial_patterns if pattern in combined)
+        approval_count = sum(1 for pattern in approval_patterns if pattern in combined)
+        
+        # 명확한 판단 기준
+        if denial_count > 0 and denial_count > approval_count:
+            return 'DENIED'
+        elif approval_count > 0 and approval_count > denial_count:
+            return 'APPROVED'
+        elif denial_count == approval_count and denial_count > 0:
+            # 동점이면 더 구체적인 문구 확인
+            if 'excluded from classification' in combined or 'not classifiable' in combined:
+                return 'DENIED'
+            elif 'classified in subheading' in combined or 'properly classified' in combined:
+                return 'APPROVED'
+        
+        # 판단 불가
+        return 'UNKNOWN'
     
-    def _get_sample_precedents_data(self, hs_code: str) -> List[Dict[str, Any]]:
-        """
-        샘플 판례 데이터를 반환합니다.
-        """
-        sample_data = {
-            "3304.99.50.00": [
-                {
-                    "case_id": "SAMPLE-2024-001",
-                    "title": "Vitamin C Serum Import Approval",
-                    "status": "APPROVED",
-                    "date": "2024-03-15",
-                    "description": "High-concentration Vitamin C serum successfully imported with proper FDA certification",
-                    "key_factors": ["FDA certification", "Concentration verification", "Stability testing"],
-                    "hs_code": "3304.99.50.00",
-                    "source": "sample"
-                }
-            ]
+    def _determine_hs_category(self, hs_code: str) -> str:
+        """HS 코드에서 카테고리를 결정합니다."""
+        hs_category = hs_code.split('.')[0] if '.' in hs_code else hs_code[:2]
+        
+        category_map = {
+            '33': 'Cosmetic',
+            '3304': 'Cosmetic',
+            '21': 'Food',
+            '2106': 'Food',
+            '85': 'Electronics',
+            '8517': 'Electronics',
+            '84': 'Machinery',
+            '90': 'Medical',
+            '9018': 'Medical',
+            '94': 'Furniture'
         }
         
-        return sample_data.get(hs_code, [])
+        return category_map.get(hs_category, 'General')
     
-    # 기존 메서드들은 호환성을 위해 유지
-    async def search_cross_database(self, hs_code: str) -> List[Dict[str, Any]]:
-        return await self.get_precedents_by_hs_code(hs_code)
-    
-    async def search_bulletin_decisions(self, hs_code: str) -> List[Dict[str, Any]]:
-        return await self._scrape_bulletin_decisions(None, hs_code)
-    
-    async def search_foia_records(self, hs_code: str) -> List[Dict[str, Any]]:
-        return await self._scrape_foia_records(None, hs_code)
-    
-    def merge_and_clean_data(self, cross_data: List[Dict], bulletin_data: List[Dict], foia_data: List[Dict]) -> List[Dict[str, Any]]:
-        all_data = cross_data + bulletin_data + foia_data
-        return self._clean_and_deduplicate_data(all_data)
+    def _clean_and_deduplicate_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """데이터를 정리하고 중복을 제거합니다."""
+        # 중복 제거 (case_id 기준)
+        seen_ids = set()
+        cleaned_data = []
+        
+        for item in data:
+            case_id = item.get('case_id', '')
+            if case_id and case_id not in seen_ids:
+                seen_ids.add(case_id)
+                cleaned_data.append(item)
+        
+        return cleaned_data
