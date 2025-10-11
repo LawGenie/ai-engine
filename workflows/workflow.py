@@ -7,15 +7,13 @@ from langchain.tools import tool
 from typing import Dict, Any, List, TypedDict
 import requests
 import json
+from tax_via_hs.query_service import HTSQueryService
 
 # TypedDict로 상태 정의
 class ProductAnalysisState(TypedDict):
     product_name: str
     description: str
-    hs_code: str
-    tariff_analysis: Dict[str, Any]
-    requirements_analysis: Dict[str, Any]
-    precedents_analysis: Dict[str, Any]
+    suggestions: List[Dict[str, Any]]
     final_result: Dict[str, Any]
 
 # 동기 방식으로 precedents-analysis API 호출
@@ -120,145 +118,55 @@ def analyze_precedents_tool_real(hs_code: str, product_name: str = "", product_d
         return f"판례 분석 실패: {str(e)}"
 
 # Nodes 정의
-def hs_code_analysis_node(state: ProductAnalysisState) -> ProductAnalysisState:
-    """HS코드 분석 노드"""
+def hs_code_similarity_node(state: ProductAnalysisState) -> ProductAnalysisState:
+    """FAISS 유사도 기반 HS코드 후보 3개 도출 및 관세율 부가"""
     try:
-        print(f"\n🔍 [NODE] HS코드 분석 시작")
+        print(f"\n🔍 [NODE] 유사도 검색 시작")
         print(f"  📦 상품명: {state['product_name']}")
-        
-        # HS코드 추출 (간단한 로직)
-        hs_code = "3304.99.50.00"  # 화장품 세트용 고정값
-        
-        print(f"  ✅ HS코드 분석 완료: {hs_code}")
-        
-        # 상태 업데이트
-        state["hs_code"] = hs_code
-        state["tariff_analysis"] = {}
-        state["requirements_analysis"] = {}
-        state["precedents_analysis"] = {}
-        state["final_result"] = {}
-        
+        print(f"  📝 설명: {state['description'][:120]}...")
+
+        service = HTSQueryService()
+        top = service.search_by_description(f"{state['product_name']} | {state['description']}", top_k=3)
+        suggestions: List[Dict[str, Any]] = []
+        for rec in top:
+            hs = rec.get("hts_number", "")
+            rate = service.get_adjusted_rate(hs) or 0.0
+            suggestions.append({
+                "hsCode": hs,
+                "description": rec.get("description", ""),
+                "confidenceScore": float(rec.get("similarity", 0.0)),
+                "reasoning": "Vector similarity match from HTS corpus",
+                "usTariffRate": float(rate)
+            })
+        print(f"  ✅ 유사도 검색 완료: {len(suggestions)}개")
+        state["suggestions"] = suggestions
         return state
     except Exception as e:
-        print(f"  ❌ HS코드 분석 실패: {str(e)}")
-        state["hs_code"] = ""
+        print(f"  ❌ 유사도 검색 실패: {str(e)}")
+        state["suggestions"] = []
         return state
 
-def tariff_analysis_node(state: ProductAnalysisState) -> ProductAnalysisState:
-    """관세 분석 노드"""
+def finalize_node(state: ProductAnalysisState) -> ProductAnalysisState:
+    """최종 결과 구성 노드"""
     try:
-        print(f"\n🔍 [NODE] 관세 분석 시작")
-        print(f"  📋 HS코드: {state['hs_code']}")
-        
-        # 관세 분석 결과
-        tariff_result = {
-            "rate": "0.0%",
-            "risk_level": "낮음",
-            "description": "화장품 세트는 관세 면제"
+        print(f"\n🔍 [NODE] 최종 결과 구성")
+        state["final_result"] = {
+            "suggestions": state.get("suggestions", []),
+            "analysisSessionId": f"graph_{__import__('time').time_ns()}"
         }
-        
-        print(f"  ✅ 관세 분석 완료")
-        
-        # 상태 업데이트
-        state["tariff_analysis"] = tariff_result
-        
         return state
     except Exception as e:
-        print(f"  ❌ 관세 분석 실패: {str(e)}")
-        state["tariff_analysis"] = {"error": str(e)}
+        state["final_result"] = {"suggestions": [], "error": str(e)}
         return state
 
 def requirements_analysis_node(state: ProductAnalysisState) -> ProductAnalysisState:
-    """요구사항 분석 노드"""
-    try:
-        print(f"\n🔍 [NODE] 요구사항 분석 시작")
-        print(f"  📋 HS코드: {state['hs_code']}")
-        
-        # 요구사항 분석 결과
-        requirements_result = {
-            "requirements": [
-                "FDA 인증서",
-                "성분 표시",
-                "안전성 검증서",
-                "라벨링 요건",
-                "제조사 등록"
-            ],
-            "compliance_score": 85
-        }
-        
-        print(f"  ✅ 요구사항 분석 완료")
-        
-        # 상태 업데이트
-        state["requirements_analysis"] = requirements_result
-        
-        return state
-    except Exception as e:
-        print(f"  ❌ 요구사항 분석 실패: {str(e)}")
-        state["requirements_analysis"] = {"error": str(e)}
-        return state
+    return state
 
 def precedents_analysis_node(state: ProductAnalysisState) -> ProductAnalysisState:
-    """실제 precedents-analysis API를 호출하는 판례 분석 노드"""
-    try:
-        print(f"\n🔍 [NODE] 판례 분석 시작")
-        print(f"  📋 HS코드: {state['hs_code']}")
-        print(f"  📦 상품명: {state['product_name']}")
-        
-        # 실제 API 호출 (동기)
-        result = call_precedents_api_sync(
-            hs_code=state['hs_code'],
-            product_name=state['product_name'],
-            product_description=state['description']
-        )
-        
-        print(f"  ✅ 판례 분석 완료")
-        print(f"  📊 신뢰도: {result['confidence_score']}")
-        print(f"  📊 유효성: {result['is_valid']}")
-        
-        # 상태 업데이트
-        state["precedents_analysis"] = result
-        
-        return state
-        
-    except Exception as e:
-        print(f"  ❌ 판례 분석 실패: {str(e)}")
-        state["precedents_analysis"] = {
-            "success_cases": [],
-            "failure_cases": [],
-            "actionable_insights": [f"분석 실패: {str(e)}"],
-            "risk_factors": ["시스템 오류"],
-            "recommended_action": "관세사 상담 권장",
-            "confidence_score": 0.0,
-            "is_valid": False
-        }
-        return state
+    return state
 
 def final_integration_node(state: ProductAnalysisState) -> ProductAnalysisState:
-    """최종 통합 노드"""
-    try:
-        print(f"\n🔍 [NODE] 최종 통합 시작")
-        
-        # 모든 분석 결과 통합
-        final_result = {
-            "product_name": state["product_name"],
-            "hs_code": state["hs_code"],
-            "tariff_analysis": state["tariff_analysis"],
-            "requirements_analysis": state["requirements_analysis"],
-            "precedents_analysis": state["precedents_analysis"],
-            "timestamp": "2024-01-01T00:00:00Z",
-            "status": "completed"
-        }
-        
-        print(f"  ✅ 최종 통합 완료")
-        
-        # 상태 업데이트
-        state["final_result"] = final_result
-        
-        return state
-    except Exception as e:
-        print(f"  ❌ 최종 통합 실패: {str(e)}")
-        state["final_result"] = {"error": str(e)}
-        return state
+    return finalize_node(state)
 
 # 워크플로우 생성
 def create_analysis_workflow():
@@ -266,21 +174,19 @@ def create_analysis_workflow():
     workflow = StateGraph(ProductAnalysisState)
     
     # 노드 추가
-    workflow.add_node("hs_code_analysis", hs_code_analysis_node)
-    workflow.add_node("tariff_analysis", tariff_analysis_node)
+    workflow.add_node("hs_code_similarity", hs_code_similarity_node)
     workflow.add_node("requirements_analysis", requirements_analysis_node)
     workflow.add_node("precedents_analysis", precedents_analysis_node)
     workflow.add_node("final_integration", final_integration_node)
     
     # 엣지 추가 (순차 실행)
-    workflow.add_edge("hs_code_analysis", "tariff_analysis")
-    workflow.add_edge("tariff_analysis", "requirements_analysis")
+    workflow.add_edge("hs_code_similarity", "requirements_analysis")
     workflow.add_edge("requirements_analysis", "precedents_analysis")
     workflow.add_edge("precedents_analysis", "final_integration")
     workflow.add_edge("final_integration", END)
     
     # 시작점 설정
-    workflow.set_entry_point("hs_code_analysis")
+    workflow.set_entry_point("hs_code_similarity")
     
     return workflow.compile()
 
@@ -295,10 +201,7 @@ def run_analysis_workflow(product_name: str, description: str = "") -> Dict[str,
         initial_state: ProductAnalysisState = {
             "product_name": product_name,
             "description": description,
-            "hs_code": "",
-            "tariff_analysis": {},
-            "requirements_analysis": {},
-            "precedents_analysis": {},
+            "suggestions": [],
             "final_result": {}
         }
         

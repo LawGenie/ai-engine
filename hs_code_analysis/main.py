@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 import logging
 from hs_code_analyzer import HsCodeAnalyzer
+from workflows.workflow import run_analysis_workflow
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -90,6 +91,23 @@ async def analyze_hs_code(request: HsCodeAnalysisRequest):
             status_code=500, 
             detail=f"HS 코드 분석 중 오류가 발생했습니다: {str(e)}"
         )
+
+@app.post("/api/hs-code/analyze-graph", response_model=HsCodeAnalysisResponse)
+async def analyze_hs_code_graph(request: HsCodeAnalysisRequest):
+    """
+    LangGraph + FAISS 유사도 검색 기반으로 HS 코드 3개를 추천합니다.
+    """
+    try:
+        logger.info(f"[Graph] HS 코드 분석 요청 - 제품명: {request.product_name}")
+        graph_result = run_analysis_workflow(
+            product_name=request.product_name,
+            description=request.product_description or ""
+        )
+        # graph_result: { suggestions: [...], analysisSessionId: ... }
+        return HsCodeAnalysisResponse(**graph_result)
+    except Exception as e:
+        logger.error(f"[Graph] HS 코드 분석 API 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Graph 분석 오류: {str(e)}")
 
 @app.get("/api/hs-code/status")
 async def get_service_status():

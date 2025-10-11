@@ -12,3 +12,6 @@ aiohttp>=3.9.0
 pypdf>=4.2.0
 sentence-transformers>=2.7.0
 openai>=1.40.0
+faiss-cpu>=1.8.0
+numpy>=1.26.0
+mcp>=1.2.0
