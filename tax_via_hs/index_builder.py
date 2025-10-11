@@ -65,6 +65,9 @@ def build_faiss_index(
     metadata_path = str(Path(out_dir) / "metadata.json")
 
     records = _load_records(json_file)
+    
+    # 한국 기본 관세율 15% (0.15) 설정
+    KOREA_BASE_TARIFF: float = 0.15
 
     # Prepare embeddings and metadata
     embeddings: List[List[float]] = []
@@ -73,9 +76,14 @@ def build_faiss_index(
         text = _build_text(rec)
         emb = _hash_embedding(text, dim=dim)
         embeddings.append(emb)
+        
+        # 🔑 최종 수정된 로직: final_rate_for_korea에 기본 관세 15%를 더함
+        current_rate = rec.get("final_rate_for_korea", 0.0)
+        final_rate_with_addition = current_rate + KOREA_BASE_TARIFF # 덧셈 적용
+        
         metadata.append({
             "hts_number": rec.get("hts_number"),
-            "final_rate_for_korea": rec.get("final_rate_for_korea", 0.0),
+            "final_rate_for_korea": final_rate_with_addition,  # 15%가 더해진 값
             "description": rec.get("description", ""),
         })
 
@@ -97,5 +105,3 @@ if __name__ == "__main__":
     path_idx, path_meta = build_faiss_index()
     print(f"✅ Built FAISS index: {path_idx}")
     print(f"✅ Wrote metadata: {path_meta}")
-
-
