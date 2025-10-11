@@ -39,7 +39,10 @@ else:
 
 from app.routers.product_router import router as product_router
 from app.routers.chat_router import router as chat_router
-from app.routers.requirements.requirement_router import router as requirement_router
+from app.routers.requirements_router import router as requirements_router
+from app.routers.verification_router import router as verification_router
+from app.routers.product_registration_router import router as product_registration_router
+from app.routers.keyword_extraction_router import router as keyword_extraction_router
 from app.routers.tax_router import router as tax_router
 from app.schemas.common import HealthResponse
 from datetime import datetime
@@ -53,7 +56,10 @@ app = FastAPI(
 # 라우터 등록
 app.include_router(product_router)
 app.include_router(chat_router)
-app.include_router(requirement_router)
+app.include_router(requirements_router)
+app.include_router(verification_router)
+app.include_router(product_registration_router)
+app.include_router(keyword_extraction_router)
 app.include_router(tax_router)
 
 @app.get("/")
@@ -61,7 +67,7 @@ async def root():
     return {
         "message": "LawGenie AI Engine is running!",
         "version": "1.0.0",
-        "services": ["hs_code_recommendation", "tariff_calculation", "requirements_analysis", "precedents_analysis", "chat"]
+        "services": ["requirements_analysis", "verification", "product_registration", "keyword_extraction", "chat"]
     }
 
 @app.get("/health", response_model=HealthResponse)
@@ -75,6 +81,13 @@ async def health_check():
             "tariff_calculation": "active", 
             "requirements_analysis": "active",
             "precedents_analysis": "active",
+            "detailed_regulations": "active",
+            "testing_procedures": "active",
+            "penalties": "active",
+            "validity": "active",
+            "requirements": "active",
+            "product_registration": "active",
+            "keyword_extraction": "active",
             "chat": "active"
         }
     )

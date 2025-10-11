@@ -1,6 +1,7 @@
 """
 LangGraph Nodes for Requirements Analysis
 각 단계별로 처리하는 노드들
+(Updated: 2025-10-10 - LLM 요약 추가, 타입 에러 수정)
 """
 
 from typing import Dict, Any, List
@@ -8,7 +9,9 @@ from .tools import RequirementsTools
 from app.services.requirements.keyword_extractor import KeywordExtractor, HfKeywordExtractor, OpenAiKeywordExtractor
 from app.services.requirements.tavily_search import TavilySearchService
 from app.services.requirements.web_scraper import WebScraper
+from app.services.requirements.error_handler import error_handler, WorkflowError, ErrorSeverity, ErrorRecoveryStrategy
 from app.models.requirement_models import RequirementAnalysisRequest
+from datetime import datetime
 
 
 class RequirementsNodes:
@@ -29,37 +32,77 @@ class RequirementsNodes:
         - 길이 3 이상 단어 우선, 상위 3개 반환
         - 한글일 경우 간단 매핑 시도
         """
-        request = state["request"]
-        name = (request.product_name or "").strip()
-        desc = (request.product_description or "").strip()
-        # HF 추출기 시도 → 실패 시 휴리스틱
-        if self.hf_extractor is None:
-            try:
-                self.hf_extractor = HfKeywordExtractor()
-            except Exception:
-                self.hf_extractor = None
-        if self.keyword_extractor is None:
-            self.keyword_extractor = KeywordExtractor()
-        if self.openai_extractor is None:
-            try:
-                self.openai_extractor = OpenAiKeywordExtractor()
-            except Exception:
-                self.openai_extractor = None
+        try:
+            request = state["request"]
+            name = (request.product_name or "").strip()
+            desc = (request.product_description or "").strip()
+            
+            # HF 추출기 시도 → 실패 시 휴리스틱
+            if self.hf_extractor is None:
+                try:
+                    self.hf_extractor = HfKeywordExtractor()
+                except Exception as e:
+                    self.hf_extractor = None
+                    print(f"⚠️ HF 키워드 추출기 초기화 실패: {e}")
+            
+            if self.keyword_extractor is None:
+                self.keyword_extractor = KeywordExtractor()
+            
+            if self.openai_extractor is None:
+                try:
+                    self.openai_extractor = OpenAiKeywordExtractor()
+                except Exception as e:
+                    self.openai_extractor = None
+                    print(f"⚠️ OpenAI 키워드 추출기 초기화 실패: {e}")
 
-        core_keywords = []
-        try:
-            # OpenAI 우선(플래그 활성 시) → HF → 휴리스틱
-            if self.openai_extractor:
-                core_keywords = self.openai_extractor.extract(name, desc, top_k=3)
-        except Exception:
             core_keywords = []
-        try:
-            if self.hf_extractor:
-                core_keywords = self.hf_extractor.extract(name, desc, top_k=3)
-        except Exception:
-            core_keywords = []
-        if not core_keywords:
-            core_keywords = self.keyword_extractor.extract(name, desc, top_k=3)
+            
+            # 키워드 추출 시도 (우선순위: OpenAI → HF → 휴리스틱)
+            try:
+                if self.openai_extractor:
+                    core_keywords = self.openai_extractor.extract(name, desc, top_k=3)
+                    print(f"✅ OpenAI 키워드 추출 성공: {core_keywords}")
+            except Exception as e:
+                print(f"⚠️ OpenAI 키워드 추출 실패: {e}")
+                core_keywords = []
+            
+            if not core_keywords:
+                try:
+                    if self.hf_extractor:
+                        core_keywords = self.hf_extractor.extract(name, desc, top_k=3)
+                        print(f"✅ HF 키워드 추출 성공: {core_keywords}")
+                except Exception as e:
+                    print(f"⚠️ HF 키워드 추출 실패: {e}")
+                    core_keywords = []
+            
+            if not core_keywords:
+                try:
+                    core_keywords = self.keyword_extractor.extract(name, desc, top_k=3)
+                    print(f"✅ 휴리스틱 키워드 추출 성공: {core_keywords}")
+                except Exception as e:
+                    print(f"❌ 휴리스틱 키워드 추출 실패: {e}")
+                    # 최종 폴백: 상품명에서 기본 키워드 추출
+                    core_keywords = self._extract_fallback_keywords(name, desc)
+                    print(f"🔄 폴백 키워드 추출: {core_keywords}")
+            
+        except Exception as e:
+            print(f"❌ 키워드 추출 노드 전체 실패: {e}")
+            # 에러 처리
+            error_result = error_handler.handle_error(
+                WorkflowError(
+                    f"키워드 추출 실패: {str(e)}",
+                    ErrorSeverity.MEDIUM,
+                    ErrorRecoveryStrategy.FALLBACK,
+                    {'step': 'keyword_extraction', 'hs_code': request.hs_code}
+                ),
+                {'step': 'keyword_extraction', 'state': state}
+            )
+            
+            if error_result['continue_workflow']:
+                core_keywords = error_result.get('fallback_data', {}).get('keywords', ['default'])
+                print(f"🔄 에러 복구 후 폴백 키워드 사용: {core_keywords}")
+            else:
+                raise WorkflowError("키워드 추출 실패로 워크플로우 중단", ErrorSeverity.HIGH)
         
         # 상위 3개 키워드를 단계적으로 시도할 수 있도록 저장
         state["core_keywords"] = core_keywords
@@ -69,10 +112,67 @@ class RequirementsNodes:
             {"strategy": "top3", "keywords": core_keywords[:3]}
         ]
         
+        # 🎯 키워드 추출 단계의 상세 metadata 수집
+        keyword_metadata = {
+            "extraction_step": {
+                "hs_code": request.hs_code,
+                "product_name": request.product_name,
+                "product_description": request.product_description,
+                "extraction_methods_tried": [
+                    {"method": "OpenAI", "success": self.openai_extractor is not None, "keywords_found": core_keywords if self.openai_extractor else []},
+                    {"method": "HuggingFace", "success": self.hf_extractor is not None, "keywords_found": core_keywords if self.hf_extractor else []},
+                    {"method": "Heuristic", "success": True, "keywords_found": core_keywords}
+                ],
+                "final_keywords": core_keywords,
+                "keyword_count": len(core_keywords),
+                "extraction_timestamp": datetime.now().isoformat(),
+                "keyword_sources": {
+                    "from_product_name": name,
+                    "from_description": desc,
+                    "combined_text": f"{name} {desc}".strip()
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(keyword_metadata)
+        
         print(f"\n🔎 [NODE] 핵심 키워드: {core_keywords}")
         print(f"🔎 [NODE] 키워드 전략: {[s['strategy'] for s in state['keyword_strategies']]}")
+        print(f"🔎 [METADATA] 키워드 추출 상세 정보 저장됨")
         state["next_action"] = "call_hybrid_api"
         return state
+    
+    def _extract_fallback_keywords(self, product_name: str, product_description: str) -> List[str]:
+        """폴백 키워드 추출 (기본 휴리스틱)"""
+        text = f"{product_name} {product_description}".lower()
+        
+        # 기본 키워드 매핑
+        keyword_mapping = {
+            'vitamin': ['vitamin', 'supplement', 'health'],
+            'serum': ['serum', 'skincare', 'beauty'],
+            'cream': ['cream', 'moisturizer', 'skincare'],
+            'food': ['food', 'nutrition', 'diet'],
+            'cosmetic': ['cosmetic', 'beauty', 'makeup'],
+            'electronic': ['electronic', 'device', 'technology'],
+            'toy': ['toy', 'children', 'play'],
+            'clothing': ['clothing', 'garment', 'textile']
+        }
+        
+        # 매핑된 키워드 찾기
+        for key, keywords in keyword_mapping.items():
+            if key in text:
+                return keywords[:3]
+        
+        # 기본 키워드 추출
+        words = text.split()
+        keywords = []
+        for word in words:
+            if len(word) > 3 and word.isalpha():
+                keywords.append(word)
+                if len(keywords) >= 3:
+                    break
+        
+        return keywords if keywords else ['product', 'import', 'requirement']
     
     async def search_agency_documents(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """기관별 문서 검색 노드"""
@@ -118,34 +218,81 @@ class RequirementsNodes:
         print(f"  📋 8자리 HS코드: {hs_code_8digit}")
         print(f"  📋 6자리 HS코드: {hs_code_6digit}")
         
-        # 각 기관별 검색 쿼리 (8자리와 6자리 모두)
+        # 타겟 기관 결정 (AI 매핑 또는 하드코딩 또는 챕터 기반 추론)
+        target_agencies_data = await self.tools._get_target_agencies_for_hs_code(hs_code, product_name)
+        target_agencies = target_agencies_data.get("primary_agencies", [])
+        
+        # 타겟 기관이 없으면 최소한 FDA는 포함
+        if not target_agencies:
+            target_agencies = ["FDA"]
+            print(f"  ⚠️ 타겟 기관 없음 - 기본값 FDA 사용")
+        
+        print(f"  🎯 타겟 기관: {', '.join(target_agencies)} ({target_agencies_data.get('source', 'unknown')})")
+        print(f"  💰 Tavily 검색 최적화: {len(target_agencies)}개 기관만 검색")
+        
+        # 각 기관별 검색 쿼리 (8자리와 6자리 모두) - 타겟 기관만!
         search_queries = {}
         
-        # 8자리 HS코드 검색 (정확)
-        search_queries.update({
-            f"FDA_8digit": f"site:fda.gov import requirements {query_term} HS {hs_code_8digit}",
-            f"FCC_8digit": f"site:fcc.gov device authorization requirements {query_term} HS {hs_code_8digit}",
-            f"CBP_8digit": f"site:cbp.gov import documentation requirements HS {hs_code_8digit} {query_term}",
-            f"USDA_8digit": f"site:usda.gov agricultural import requirements {query_term} HS {hs_code_8digit}",
-            f"EPA_8digit": f"site:epa.gov environmental regulations {query_term} HS {hs_code_8digit}",
-            f"CPSC_8digit": f"site:cpsc.gov consumer product safety {query_term} HS {hs_code_8digit}",
-            f"KCS_8digit": f"site:customs.go.kr Korea customs import requirements {query_term} HS {hs_code_8digit}",
-            f"MFDS_8digit": f"site:mfds.go.kr food drug safety import {query_term} HS {hs_code_8digit}",
-            f"MOTIE_8digit": f"site:motie.go.kr trade policy import requirements {query_term} HS {hs_code_8digit}"
-        })
+        # 기관별 사이트 도메인 매핑
+        agency_domains = {
+            "FDA": "fda.gov",
+            "FCC": "fcc.gov",
+            "CBP": "cbp.gov",
+            "USDA": "usda.gov",
+            "EPA": "epa.gov",
+            "CPSC": "cpsc.gov",
+            "KCS": "customs.go.kr",
+            "MFDS": "mfds.go.kr",
+            "MOTIE": "motie.go.kr"
+        }
         
-        # 6자리 HS코드 검색 (유사)
-        search_queries.update({
-            f"FDA_6digit": f"site:fda.gov import requirements {query_term} HS {hs_code_6digit}",
-            f"FCC_6digit": f"site:fcc.gov device authorization requirements {query_term} HS {hs_code_6digit}",
-            f"CBP_6digit": f"site:cbp.gov import documentation requirements HS {hs_code_6digit} {query_term}",
-            f"USDA_6digit": f"site:usda.gov agricultural import requirements {query_term} HS {hs_code_6digit}",
-            f"EPA_6digit": f"site:epa.gov environmental regulations {query_term} HS {hs_code_6digit}",
-            f"CPSC_6digit": f"site:cpsc.gov consumer product safety {query_term} HS {hs_code_6digit}",
-            f"KCS_6digit": f"site:customs.go.kr Korea customs import requirements {query_term} HS {hs_code_6digit}",
-            f"MFDS_6digit": f"site:mfds.go.kr food drug safety import {query_term} HS {hs_code_6digit}",
-            f"MOTIE_6digit": f"site:motie.go.kr trade policy import requirements {query_term} HS {hs_code_6digit}"
-        })
+        # 타겟 기관만 검색 쿼리 생성
+        for agency in target_agencies:
+            domain = agency_domains.get(agency, f"{agency.lower()}.gov")
+            
+            # 8자리 HS코드 검색
+            if agency == "FDA":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} import requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "FCC":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} device authorization requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "CBP":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} import documentation requirements HS {hs_code_8digit} {query_term}"
+            elif agency == "USDA":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} agricultural import requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "EPA":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} environmental regulations {query_term} HS {hs_code_8digit}"
+            elif agency == "CPSC":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} consumer product safety {query_term} HS {hs_code_8digit}"
+            elif agency == "KCS":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} Korea customs import requirements {query_term} HS {hs_code_8digit}"
+            elif agency == "MFDS":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} food drug safety import {query_term} HS {hs_code_8digit}"
+            elif agency == "MOTIE":
+                search_queries[f"{agency}_8digit"] = f"site:{domain} trade policy import requirements {query_term} HS {hs_code_8digit}"
+        
+        # 6자리 HS코드 검색 (유사) - 타겟 기관만!
+        for agency in target_agencies:
+            domain = agency_domains.get(agency, f"{agency.lower()}.gov")
+            
+            # 6자리 HS코드 검색
+            if agency == "FDA":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} import requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "FCC":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} device authorization requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "CBP":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} import documentation requirements HS {hs_code_6digit} {query_term}"
+            elif agency == "USDA":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} agricultural import requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "EPA":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} environmental regulations {query_term} HS {hs_code_6digit}"
+            elif agency == "CPSC":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} consumer product safety {query_term} HS {hs_code_6digit}"
+            elif agency == "KCS":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} Korea customs import requirements {query_term} HS {hs_code_6digit}"
+            elif agency == "MFDS":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} food drug safety import {query_term} HS {hs_code_6digit}"
+            elif agency == "MOTIE":
+                search_queries[f"{agency}_6digit"] = f"site:{domain} trade policy import requirements {query_term} HS {hs_code_6digit}"
         
         search_results = {}
         
@@ -154,35 +301,36 @@ class RequirementsNodes:
             print(f"    쿼리: {query}")
             
             # 프로바이더를 통한 검색 시도 (더 많은 결과 수집)
-            results = await self.tools.search_provider.search(query, max_results=10)
+            results = await self.tools.search_provider.search(query, max_results=15)  # 검색 결과를 15개로 확장
             print(f"    📊 {self.tools.search_provider.provider_name} 검색 결과: {len(results)}개")
+            
+            # 검색 결과 처리
+            chosen_urls = []
             
             if not results and self.tools.search_provider.provider_name == "disabled":
                 print(f"    🔇 검색 비활성화 모드: '{query}' 스킵됨")
+                agency_name = agency.split("_")[0]
+                default_url = default_urls.get(agency_name)
+                if default_url:
+                    chosen_urls = [default_url]
             elif not results:
                 print(f"    💡 팁: TAVILY_API_KEY를 설정하면 더 정확한 검색 결과를 얻을 수 있습니다.")
-            
-            # 여러 링크 수집 (최대 5개)
-            chosen_urls = []
-            
-            if results:
-                # 각 결과 상세 출력
+                agency_name = agency.split("_")[0]
+                default_url = default_urls.get(agency_name)
+                if default_url:
+                    chosen_urls = [default_url]
+                print(f"    🔄 {agency} TavilySearch 실패, 기본 URL 사용: {default_url}")
+            else:
+                # 검색 성공 - 여러 링크 수집 (최대 10개)
                 for i, result in enumerate(results, 1):
                     title = result.get('title', 'No title')
                     url = result.get('url', 'No URL')
                     print(f"      {i}. {title}")
                     print(f"         URL: {url}")
                 
-                # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 5개 선택)
-                chosen_urls = [result.get("url") for result in results[:5] if result.get("url")]
+                # site: 쿼리로 검색했으므로 모든 결과가 공식 사이트 (최대 10개 선택)
+                chosen_urls = [result.get("url") for result in results[:10] if result.get("url")]
                 print(f"    ✅ {agency} 공식 사이트 결과 {len(chosen_urls)}개 선택")
-            else:
-                # TavilySearch 실패 시 기본 URL 사용
-                agency_name = agency.split("_")[0]  # FDA_8digit -> FDA
-                default_url = default_urls.get(agency_name)
-                if default_url:
-                    chosen_urls = [default_url]
-                print(f"    🔄 {agency} TavilySearch 실패, 기본 URL 사용: {default_url}")
             
             search_results[agency] = {
                 "urls": chosen_urls,  # 여러 URL 저장
@@ -197,12 +345,43 @@ class RequirementsNodes:
         found_count = sum(1 for v in search_results.values() if v.get("urls"))
         print(f"\n📋 [NODE] 검색 완료 - {found_count}개 URL 세트 발견")
         
+        # 🎯 기관별 검색 단계의 상세 metadata 수집
+        search_metadata = {
+            "search_step": {
+                "hs_code_8digit": hs_code_8digit,
+                "hs_code_6digit": hs_code_6digit,
+                "query_term": query_term,
+                "search_strategies": search_queries,
+                "search_provider": self.tools.search_provider.provider_name if hasattr(self.tools, 'search_provider') else "unknown",
+                "total_urls_found": found_count,
+                "search_results_per_agency": {
+                    agency: {
+                        "url_count": len(search_data["urls"]),
+                        "query": search_data["query"],
+                        "hs_code_type": search_data["hs_code_type"],
+                        "is_fallback": search_data["is_fallback"],
+                        "search_timestamp": datetime.now().isoformat()
+                    } for agency, search_data in search_results.items()
+                },
+                "default_urls_used": default_urls,
+                "search_performance": {
+                    "total_queries_executed": len(search_queries),
+                    "successful_searches": len([sr for sr in search_results.values() if not sr.get("is_fallback", False)]),
+                    "fallback_searches": len([sr for sr in search_results.values() if sr.get("is_fallback", False)])
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(search_metadata)
+
         # 상태 업데이트 (기존 상태 유지)
         state["search_results"] = search_results
         # 참고 링크 저장
         request = state["request"]
         save_meta = self.tools.save_reference_links(request.hs_code, request.product_name, search_results)
         state["references_saved"] = save_meta
+        
+        print(f"🔍 [METADATA] 기관별 검색 상세 정보 저장됨 - 총 {found_count}개 URL 발견")
         state["next_action"] = "scrape_documents"
         return state
 
@@ -217,12 +396,66 @@ class RequirementsNodes:
         print(f"\n📡 [NODE] 하이브리드 API 호출 시작: {hs_code} / {product_name}")
         try:
             # Phase 2-4 포함된 하이브리드 검색
+            hybrid_start_time = datetime.now()
             hybrid = await self.tools.search_requirements_hybrid(hs_code, query_term, product_description)
+            hybrid_end_time = datetime.now()
+            
+            # 🎯 하이브리드 검색 단계의 상세 metadata 수집
+            hybrid_metadata = {
+                "hybrid_api_step": {
+                    "hs_code": hs_code,
+                    "query_term": query_term,
+                    "product_description": product_description[:100] if product_description else "",  # 처음 100자만
+                    "api_parameters": {
+                        "hs_code": hs_code,
+                        "query": query_term,
+                        "description_length": len(product_description) if product_description else 0,
+                        "keywords_length": len(keywords)
+                    },
+                    "api_response": {
+                        "success": not hybrid.get("error"),
+                        "response_time_ms": int((hybrid_end_time - hybrid_start_time).total_seconds() * 1000),
+                        "data_keys": list(hybrid.keys()) if isinstance(hybrid, dict) else [],
+                        "error_message": hybrid.get("error") if hybrid.get("error") else None
+                    },
+                    "timestamp": hybrid_end_time.isoformat()
+                }
+            }
+            state["detailed_metadata"] = state.get("detailed_metadata", {})
+            state["detailed_metadata"].update(hybrid_metadata)
+            
             state["hybrid_result"] = hybrid
+            print(f"📡 [METADATA] 하이브리드 API 검색 상세 정보 저장됨 - 응답시간: {(hybrid_end_time - hybrid_start_time).total_seconds()*1000:.0f}ms")
             state["next_action"] = "scrape_documents"
         except Exception as e:
             print(f"  ❌ 하이브리드 호출 실패: {e}")
+            
+            # 오류 발생 시에도 메타데이터 수집
+            hybrid_metadata = {
+                "hybrid_api_step": {
+                    "hs_code": hs_code,
+                    "query_term": query_term,
+                    "product_description": product_description[:100] if product_description else "",
+                    "api_parameters": {
+                        "hs_code": hs_code,
+                        "query": query_term,
+                        "description_length": len(product_description) if product_description else 0,
+                        "keywords_length": len(keywords)
+                    },
+                    "api_response": {
+                        "success": False,
+                        "response_time_ms": None,
+                        "data_keys": [],
+                        "error_message": str(e)
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
+            state["detailed_metadata"] = state.get("detailed_metadata", {})
+            state["detailed_metadata"].update(hybrid_metadata)
+            
             state["hybrid_result"] = {"error": str(e)}
+            print(f"📡 [METADATA] 하이브리드 API 오류 정보 저장됨: {e}")
             state["next_action"] = "scrape_documents"
         return state
     
@@ -314,9 +547,17 @@ class RequirementsNodes:
                     print(f"        • {doc.get('name', 'Unknown')}")
                 
                 # HS코드 구분 정보 추가
+                # 안전하게 리스트로 변환 (타입 에러 방지)
+                certs_list = result.get("certifications", [])
+                docs_list = result.get("documents", [])
+                if not isinstance(certs_list, list):
+                    certs_list = []
+                if not isinstance(docs_list, list):
+                    docs_list = []
+                
                 result["hs_code_8digit"] = {
                     "urls": agency_data["8digit"]["urls"],
-                    "results": result.get("certifications", []) + result.get("documents", [])
+                    "results": certs_list + docs_list
                 }
                 result["hs_code_6digit"] = {
                     "urls": agency_data["6digit"]["urls"],
@@ -340,6 +581,42 @@ class RequirementsNodes:
                 }
         
         print(f"\n📋 [NODE] 스크래핑 완료 - {len(scraped_data)}개 기관 처리")
+        
+        # 🎯 웹 스크래핑 단계의 상세 metadata 수집
+        scraping_metadata = {
+            "scraping_step": {
+                "hs_code": hs_code,
+                "total_agencies_scraped": len(scraped_data),
+                "scraping_performance": {
+                    "successful_scraping": len([data for data in scraped_data.values() if data.get("status") == "success"]),
+                    "failed_scraping": len([data for data in scraped_data.values() if data.get("status") in ["scraping_failed", "no_urls_found"]]) + len([data for data in scraped_data.values() if data.get("error")]),
+                    "total_certifications_found": sum(len(data.get("certifications", [])) for data in scraped_data.values()),
+                    "total_documents_found": sum(len(data.get("documents", [])) for data in scraped_data.values()),
+                    "total_sources_collected": sum(len(data.get("sources", [])) for data in scraped_data.values())
+                },
+                "scraped_agencies_details": {
+                    agency: {
+                        "status": data.get("status", "unknown"),
+                        "certifications_count": len(data.get("certifications", [])),
+                        "documents_count": len(data.get("documents", [])),
+                        "sources_count": len(data.get("sources", [])),
+                        "has_raw_page_data": "raw_page_data" in data,
+                        "hs_code_8digit_urls": len(data.get("hs_code_8digit", {}).get("urls", [])),
+                        "hs_code_6digit_urls": len(data.get("hs_code_6digit", {}).get("urls", [])),
+                        "error_message": data.get("error") if data.get("error") else None,
+                        "scraping_timestamp": datetime.now().isoformat()
+                    } for agency, data in scraped_data.items()
+                },
+                "scraping_statistics": {
+                    "8digit_hs_code_urls": sum(data.get("hs_code_8digit", {}).get("urls", []) for data in scraped_data.values() if data.get("hs_code_8digit", {}).get("urls")),
+                    "6digit_hs_code_urls": sum(data.get("hs_code_6digit", {}).get("urls", []) for data in scraped_data.values() if data.get("hs_code_6digit", {}).get("urls")),
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(scraping_metadata)
+        
+        print(f"📋 [METADATA] 웹 스크래핑 상세 정보 저장됨 - 인증 요건: {scraping_metadata['scraping_step']['scraping_performance']['total_certifications_found']}개, 서류: {scraping_metadata['scraping_step']['scraping_performance']['total_documents_found']}개")
         
         # 상태 업데이트 (기존 상태 유지)
         state["scraped_data"] = scraped_data
@@ -391,36 +668,179 @@ class RequirementsNodes:
         print(f"  📄 총 필요서류: {len(all_documents)}개")
         print(f"  📚 총 출처: {len(all_sources)}개")
         
+        consolidation_start_time = datetime.now()
+        
         # 참고: CBP 판례 수집 추가
         request = state.get("request")
         cbp = None
+        precedents_fetch_start = datetime.now()
         if request:
             try:
                 cbp = await self.tools.get_cbp_precedents(request.hs_code)
-            except Exception:
-                cbp = {"error": "precedent_fetch_failed"}
+                precedents_fetch_end = datetime.now()
+                precedents_fetch_time = (precedents_fetch_end - precedents_fetch_start).total_seconds() * 1000
+                print(f"📊 CBP 판례 수집 성공: {len(cbp.get('precedents', []))}개 판례 확인됨 ({precedents_fetch_time:.0f}ms)")
+            except Exception as e:
+                cbp = {"error": "precedent_fetch_failed", "error_message": str(e)}
+                precedents_fetch_end = datetime.now()
+                precedents_fetch_time = (precedents_fetch_end - precedents_fetch_start).total_seconds() * 1000
+                print(f"📊 CBP 판례 수집 실패: {e} ({precedents_fetch_time:.0f}ms)")
 
         # 하이브리드(API+웹) 결과도 통합 (Phase 2-4 포함)
         hybrid = state.get("hybrid_result") or {}
+        hybrid_certifications = 0
+        hybrid_documents = 0
+        hybrid_sources = 0
+        phase_2_4_counts = {"testing_procedures": 0, "penalties_enforcement": 0, "validity_periods": 0}
+        
         if hybrid and not hybrid.get("error"):
             combined = hybrid.get("combined_results", {})
             if combined:
+                # 안전하게 int로 변환 (타입 에러 방지)
+                certs = combined.get("certifications", [])
+                docs = combined.get("documents", [])
+                srcs = combined.get("sources", [])
+                
+                hybrid_certifications = len(certs) if isinstance(certs, list) else 0
+                hybrid_documents = len(docs) if isinstance(docs, list) else 0
+                hybrid_sources = len(srcs) if isinstance(srcs, list) else 0
+                
                 all_certifications.extend(combined.get("certifications", []))
                 all_documents.extend(combined.get("documents", []))
                 all_sources.extend(combined.get("sources", []))
                 
                 # Phase 2-4 결과 통합
+                phase_2_4_counts = {
+                    "testing_procedures": len(combined.get('testing_procedures', [])),
+                    "penalties_enforcement": len(combined.get('penalties_enforcement', [])),
+                    "validity_periods": len(combined.get('validity_periods', []))
+                }
                 print(f"  📊 Phase 2-4 결과 통합:")
-                print(f"    🧪 검사 절차: {len(combined.get('testing_procedures', []))}개")
-                print(f"    ⚖️ 처벌 정보: {len(combined.get('penalties_enforcement', []))}개")
-                print(f"    ⏰ 유효기간: {len(combined.get('validity_periods', []))}개")
+                print(f"    🧪 검사 절차: {phase_2_4_counts['testing_procedures']}개")
+                print(f"    ⚖️ 처벌 정보: {phase_2_4_counts['penalties_enforcement']}개")
+                print(f"    ⏰ 유효기간: {phase_2_4_counts['validity_periods']}개")
 
-        # 상태 업데이트 (기존 상태 유지)
+        consolidation_end_time = datetime.now()
+        consolidation_time = (consolidation_end_time - consolidation_start_time).total_seconds() * 1000
+
+        # 🎯 결과 통합 단계의 상세 metadata 수집
+        consolidation_metadata = {
+            "consolidation_step": {
+                "hs_code": request.hs_code if request else "unknown",
+                "consolidation_performance": {
+                    "total_processing_time_ms": consolidation_time,
+                    "precedents_fetch_time_ms": precedents_fetch_time if 'precedents_fetch_time' in locals() else None,
+                    "consolidation_timestamp": consolidation_end_time.isoformat()
+                },
+                "final_counts": {
+                    "total_certifications": len(all_certifications),
+                    "total_documents": len(all_documents),
+                    "total_sources": len(all_sources),
+                    "total_precedents": len(cbp.get("precedents", [])) if cbp else 0,
+                    "hybrid_certifications_added": hybrid_certifications,
+                    "hybrid_documents_added": hybrid_documents,
+                    "hybrid_sources_added": hybrid_sources
+                },
+                "phase_2_4_counts": phase_2_4_counts,
+                "cbp_precedents_info": {
+                    "success": not cbp.get("error") if cbp else False,
+                    "precedents_count": len(cbp.get("precedents", [])) if cbp else 0,
+                    "error_message": cbp.get("error_message") if cbp and cbp.get("error") else None
+                },
+                "data_sources_summary": {
+                    "web_scraping_results": len(all_certifications) - hybrid_certifications,
+                    "hybrid_api_results": hybrid_certifications + hybrid_documents + hybrid_sources,
+                    "cbp_precedents": len(cbp.get("precedents", [])) if cbp else 0
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(consolidation_metadata)
+
+        print(f"📋 [METADATA] 결과 통합 상세 정보 저장됨 - 총 시간: {consolidation_time:.0f}ms, 최종 결과: 인증 {len(all_certifications)}개, 서류 {len(all_documents)}개")
+
+        # Citations 추출 (백엔드 API에서 제공)
+        citations = []
+        if hybrid and not hybrid.get("error"):
+            citations = hybrid.get("citations", [])
+            print(f"  📚 Citations 추출: {len(citations)}개")
+        
+        # LLM 요약 생성
+        llm_summary = None
+        try:
+            from app.services.requirements.llm_summary_service import LlmSummaryService
+            llm_service = LlmSummaryService()
+            
+            # 통합된 데이터를 문서 형태로 변환
+            raw_documents = []
+            
+            # 인증요건을 문서로 변환
+            for cert in all_certifications:
+                raw_documents.append({
+                    "title": cert.get("name", "Unknown"),
+                    "content": cert.get("description", ""),
+                    "url": cert.get("source_url", ""),
+                    "agency": cert.get("agency", "")
+                })
+            
+            # 필요서류를 문서로 변환
+            for doc in all_documents:
+                raw_documents.append({
+                    "title": doc.get("name", "Unknown"),
+                    "content": doc.get("description", ""),
+                    "url": doc.get("source_url", ""),
+                    "agency": doc.get("agency", "")
+                })
+            
+            # Citations도 추가
+            for citation in citations:
+                raw_documents.append({
+                    "title": citation.get("title", ""),
+                    "content": citation.get("snippet", ""),
+                    "url": citation.get("url", ""),
+                    "agency": citation.get("agency", "")
+                })
+            
+            print(f"  🤖 LLM 요약 생성 중... (문서 {len(raw_documents)}개)")
+            
+            # summarize_regulations 메서드 호출
+            summary_result = await llm_service.summarize_regulations(
+                hs_code=request.hs_code if request else "unknown",
+                product_name=request.product_name if request else "unknown",
+                raw_documents=raw_documents
+            )
+            
+            # SummaryResult를 딕셔너리로 변환
+            if summary_result:
+                llm_summary = {
+                    "critical_requirements": summary_result.critical_requirements,
+                    "required_documents": summary_result.required_documents,
+                    "compliance_steps": summary_result.compliance_steps,
+                    "estimated_costs": summary_result.estimated_costs,
+                    "timeline": summary_result.timeline,
+                    "risk_factors": summary_result.risk_factors,
+                    "recommendations": summary_result.recommendations,
+                    "confidence_score": summary_result.confidence_score,
+                    "model_used": summary_result.model_used,
+                    "tokens_used": summary_result.tokens_used,
+                    "cost": summary_result.cost
+                }
+                print(f"  ✅ LLM 요약 생성 완료 - 신뢰도: {summary_result.confidence_score:.2f}")
+            
+        except Exception as e:
+            print(f"  ⚠️ LLM 요약 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            llm_summary = None
+        
+        # 상태 업데이트 (기존 상태 유지 + citations + llm_summary 추가)
         state["consolidated_results"] = {
             "certifications": all_certifications,
             "documents": all_documents,
             "sources": all_sources,
-            "precedents": cbp.get("precedents", []) if cbp else []
+            "llm_summary": llm_summary,
+            "precedents": cbp.get("precedents", []) if cbp else [],
+            "citations": citations  # 출처 정보 추가
         }
         state["precedents_meta"] = cbp
         state["next_action"] = "complete"
