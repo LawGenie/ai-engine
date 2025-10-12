@@ -37,9 +37,22 @@ class LlmSummaryService:
         self.openai_client = AsyncOpenAI()
         self.cache_ttl = 86400  # 24시간
         
-        # GPT 프롬프트 템플릿 (Citations 포함)
+        # GPT 프롬프트 템플릿 (Citations 포함, 다국어 번역 지원)
         self.summary_prompt_template = """
 You are an expert US import compliance analyst. Analyze the import regulations for product "{product_name}" (HS Code: {hs_code}) based on the following official sources.
+
+**🌐 CRITICAL - LANGUAGE & TRANSLATION RULES:**
+- Product name/description and analysis results should BOTH have original + Korean translation
+- For product info: Keep original in base field, add Korean translation in "_ko" field
+  * product_name: original language (English/Chinese/Japanese/etc.)
+  * product_name_ko: Korean translation
+  * product_description: original language
+  * product_description_ko: Korean translation
+- For analysis results: English in base field, Korean in "_ko" field
+  * requirement: English
+  * requirement_ko: Korean translation
+- Example: "保湿霜" → product_name: "保湿霜", product_name_ko: "보습 크림"
+- This allows both keyword matching (original) and user display (Korean)
 
 ## Available Sources (with URLs):
 {documents}
@@ -70,6 +83,50 @@ Provide a comprehensive, actionable analysis in JSON format.
   * risk_matrix (high_risk, medium_risk items)
   * compliance_score (overall_score with category breakdown)
   * market_access (retailer_requirements, state_regulations)
+
+**TRANSLATION EXAMPLES:**
+
+Product Info (Original + Korean):
+- Chinese: product_name: "保湿蜗牛霜", product_name_ko: "보습 달팽이 크림"
+- Japanese: product_name: "保湿クリーム", product_name_ko: "보습 크림"
+- English: product_name: "Moisturizing Cream", product_name_ko: "보습 크림"
+- Mixed: product_name: "红参提取物 Premium", product_name_ko: "홍삼 추출물 프리미엄"
+
+Analysis Results (English + Korean):
+- Requirement: "FDA cosmetic regulations compliance" → requirement_ko: "FDA 화장품 규정 준수"
+- Document: "Certificate of Free Sale" → document_ko: "자유 판매 증명서"
+- Action: "Submit prior notice" → action_ko: "사전 통지 제출"
+- Risk: "Product detention at customs" → risk_ko: "세관에서 제품 억류"
+
+DO NOT translate:
+- HS codes: 3304.99.50.00 (keep as-is)
+- URLs: source_url fields (keep as-is)
+- Agency abbreviations in Korean: FDA, EPA, USDA, CBP (keep in English even in _ko fields)
+
+**CRITICAL CALCULATION REQUIREMENTS:**
+1. ALL numeric values (costs, days, scores) MUST be calculated based on ACTUAL requirements, NOT example values
+2. EVERY calculated value MUST include a "reasoning" field explaining WHY that value was chosen
+3. Use SPECIFIC numbers, not ranges of 5 or 10 - calculate precise values (e.g., 73, 82, 91 instead of 70, 80, 90)
+4. Avoid repeating the same values across different products - each analysis should be unique
+
+**COMPLIANCE SCORE CALCULATION:**
+- Calculate realistic scores based on ACTUAL requirements complexity
+- Documentation: 90-95 if ≤3 simple docs, 70-85 if 4-7 docs, 40-65 if 8+ complex docs
+- Testing: 85-95 if basic visual/physical, 60-80 if lab testing, 30-55 if multi-phase testing
+- Labeling: 90-95 if standard FDA, 65-85 if bilingual+warnings, 50-60 if state-specific
+- Timeline: 85-95 if <30 days, 65-80 if 30-60 days, 40-60 if >60 days
+- Cost efficiency: 80-90 if <$1000, 60-75 if $1000-$3000, 35-55 if >$3000
+- Overall score should be weighted average (not rounded to nearest 5)
+- MUST include reasoning for each category score
+
+**COST ESTIMATION REQUIREMENTS:**
+- Base estimates on ACTUAL number of certifications, tests, and documents required
+- Simple cosmetics: ~$800-$2000, Food products: ~$1500-$3500, Electronics: ~$2000-$5000
+- Include reasoning explaining main cost drivers (e.g., "3 FDA certifications + 2 lab tests")
+
+**TIMELINE ESTIMATION REQUIREMENTS:**
+- Calculate based on ACTUAL processing steps identified
+- Include reasoning explaining critical path (e.g., "FDA review 15 days + lab testing 10 days + documentation 7 days")
 - Focus on actionable, specific information over generic statements
 
 {{
@@ -112,19 +169,20 @@ Provide a comprehensive, actionable analysis in JSON format.
             "dependencies": ["Previous steps if any"]
         }}
     ],
-    "estimated_costs": {{
-        "certification": {{"min": 500, "max": 1000, "currency": "USD", "source_url": "https://..."}},
-        "testing": {{"min": 300, "max": 800, "currency": "USD", "source_url": "https://..."}},
-        "legal_review": {{"min": 200, "max": 500, "currency": "USD", "source_url": "https://..."}},
-        "total": {{"min": 1000, "max": 2300, "currency": "USD"}},
-        "notes": "Cost estimates based on typical cases"
+    "estimated_costs": {{ // ⚠️ REQUIRED - Calculate based on actual requirements
+        "certification": {{"min": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "max": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on X certifications required"}},
+        "testing": {{"min": [CALCULATE_BASED_ON_TEST_COUNT], "max": [CALCULATE_BASED_ON_TEST_COUNT], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on Y tests needed"}},
+        "legal_review": {{"min": [CALCULATE_BASED_ON_COMPLEXITY], "max": [CALCULATE_BASED_ON_COMPLEXITY], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on regulatory complexity"}},
+        "total": {{"min": [SUM_OF_MINIMUMS], "max": [SUM_OF_MAXIMUMS], "currency": "USD"}},
+        "notes": "Estimates based on [SPECIFY_BASIS: e.g., typical FDA cosmetic import, FDA food facility, etc.]"
     }},
-    "timeline": {{
-        "minimum_days": 30,
-        "typical_days": 45,
-        "maximum_days": 60,
-        "critical_path": ["Step 1", "Step 2", "Step 3"],
-        "source_url": "https://..."
+    "timeline": {{ // ⚠️ REQUIRED - Calculate based on actual processing times
+        "minimum_days": [FASTEST_SCENARIO_BASED_ON_REQUIREMENTS],
+        "typical_days": [AVERAGE_SCENARIO_BASED_ON_REQUIREMENTS],
+        "maximum_days": [WORST_CASE_BASED_ON_REQUIREMENTS],
+        "critical_path": ["ACTUAL step 1 from requirements", "ACTUAL step 2", "etc"],
+        "source_url": "ACTUAL_URL",
+        "reasoning": "Timeline based on [SPECIFY: e.g., FDA review + testing + documentation prep]"
     }},
     "risk_factors": [
         {{
@@ -186,7 +244,7 @@ Provide a comprehensive, actionable analysis in JSON format.
             "required_by": "Agency",
             "frequency": "How often",
             "accredited_labs": ["Lab names"],
-            "cost_per_test": {{"min": 200, "max": 500, "currency": "USD"}},
+            "cost_per_test": {{"min": [ACTUAL_COST_MIN], "max": [ACTUAL_COST_MAX], "currency": "USD", "reasoning": "Based on test type complexity"}},
             "turnaround_time": "Days",
             "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "pass_criteria": "Acceptance criteria"
@@ -197,7 +255,7 @@ Provide a comprehensive, actionable analysis in JSON format.
             "certification": "Certification name",
             "type": "mandatory/voluntary",
             "purpose": "What it certifies",
-            "cost_range": {{"min": 1000, "max": 5000, "currency": "USD"}},
+            "cost_range": {{"min": [ACTUAL_CERT_COST_MIN], "max": [ACTUAL_CERT_COST_MAX], "currency": "USD", "reasoning": "Based on certification scope"}},
             "validity": "Duration",
             "recognized_bodies": ["Certifying organizations"],
             "source_url": "https://www.fda.gov/ (or specific URL from sources)",
@@ -360,14 +418,39 @@ Provide a comprehensive, actionable analysis in JSON format.
             }}
         ]
     }},
-    "compliance_score": {{ // ⚠️ REQUIRED - Must calculate overall readiness score
-        "overall_score": 85,
+    "compliance_score": {{ // ⚠️ REQUIRED - Must calculate overall readiness score based on ACTUAL analysis
+        "overall_score": [CALCULATE_WEIGHTED_AVERAGE_OF_CATEGORIES],
         "category_scores": {{
-            "documentation": {{"score": 90, "weight": 0.3, "max_score": 100}},
-            "testing": {{"score": 80, "weight": 0.25, "max_score": 100}},
-            "labeling": {{"score": 85, "weight": 0.2, "max_score": 100}},
-            "timeline": {{"score": 90, "weight": 0.15, "max_score": 100}},
-            "cost_efficiency": {{"score": 75, "weight": 0.1, "max_score": 100}}
+            "documentation": {{
+                "score": [CALCULATE: 90-95 if ≤3 simple docs, 70-85 if 4-7 docs, 40-65 if 8+ complex docs],
+                "weight": 0.3,
+                "max_score": 100,
+                "reasoning": "Based on [X] required documents with [complexity level]"
+            }},
+            "testing": {{
+                "score": [CALCULATE: 85-95 if basic visual/physical, 60-80 if lab testing, 30-55 if multi-phase testing],
+                "weight": 0.25,
+                "max_score": 100,
+                "reasoning": "Based on [test count] tests requiring [complexity description]"
+            }},
+            "labeling": {{
+                "score": [CALCULATE: 90-95 if standard FDA, 65-85 if bilingual+warnings, 50-60 if state-specific],
+                "weight": 0.2,
+                "max_score": 100,
+                "reasoning": "Based on [labeling requirements count] with [special requirements]"
+            }},
+            "timeline": {{
+                "score": [CALCULATE: 85-95 if <30 days, 65-80 if 30-60 days, 40-60 if >60 days],
+                "weight": 0.15,
+                "max_score": 100,
+                "reasoning": "Typical processing time of [X] days including [main bottlenecks]"
+            }},
+            "cost_efficiency": {{
+                "score": [CALCULATE: 80-90 if <$1000, 60-75 if $1000-$3000, 35-55 if >$3000],
+                "weight": 0.1,
+                "max_score": 100,
+                "reasoning": "Total estimated cost of $[X]-$[Y] for [main cost drivers]"
+            }}
         }},
         "improvement_areas": [
             {{
