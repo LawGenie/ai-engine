@@ -15,5 +15,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # 추가 필드 무시 (다른 서비스의 .env 키 허용)
 
 settings = Settings()
