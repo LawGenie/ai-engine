@@ -375,6 +375,124 @@ class CrossValidationService:
         
         return recommendations
     
+    async def validate_requirements(self, hs_code: str, product_name: str, 
+                                  llm_summary: Dict[str, Any], 
+                                  phase_results: Dict[str, Any]) -> CrossValidationResult:
+        """
+        요구사항 교차 검증 수행
+        
+        Args:
+            hs_code: HS 코드
+            product_name: 상품명
+            llm_summary: LLM 요약 결과
+            phase_results: Phase 1-4 분석 결과
+            
+        Returns:
+            CrossValidationResult: 교차 검증 결과
+        """
+        try:
+            print(f"🔍 교차 검증 시작: {hs_code} - {product_name}")
+            
+            # 1. 충돌 패턴 검사
+            conflicts = self._detect_conflicts(hs_code, product_name, llm_summary, phase_results)
+            
+            # 2. 검증 점수 계산
+            validation_score = self._calculate_validation_score(conflicts, phase_results)
+            
+            # 3. 권고사항 생성
+            recommendations = self._generate_recommendations(conflicts, hs_code)
+            
+            result = CrossValidationResult(
+                hs_code=hs_code,
+                product_name=product_name,
+                conflicts_found=conflicts,
+                validation_score=validation_score,
+                recommendations=recommendations,
+                last_updated=datetime.now()
+            )
+            
+            print(f"✅ 교차 검증 완료: 검증점수 {validation_score:.2f}, 충돌 {len(conflicts)}건")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 교차 검증 실패: {e}")
+            # 실패 시 기본 결과 반환
+            return CrossValidationResult(
+                hs_code=hs_code,
+                product_name=product_name,
+                conflicts_found=[],
+                validation_score=0.5,  # 중간 점수
+                recommendations=["교차 검증 중 오류가 발생했습니다. 수동 확인을 권장합니다."],
+                last_updated=datetime.now()
+            )
+
+    def _detect_conflicts(self, hs_code: str, product_name: str, 
+                         llm_summary: Dict[str, Any], 
+                         phase_results: Dict[str, Any]) -> List[RegulationConflict]:
+        """충돌 패턴 감지"""
+        conflicts = []
+        
+        # LLM 요약에서 텍스트 추출
+        text_content = ""
+        if llm_summary:
+            for key, value in llm_summary.items():
+                if isinstance(value, (str, list)):
+                    if isinstance(value, list):
+                        text_content += " ".join(str(item) for item in value) + " "
+                    else:
+                        text_content += str(value) + " "
+        
+        # 패턴별 충돌 검사
+        for pattern_name, pattern_info in self.conflict_patterns.items():
+            pattern_keywords = pattern_info["pattern"]
+            conflicting_keywords = pattern_info["conflicting_keywords"]
+            
+            # 패턴 키워드가 모두 있고, 충돌 키워드도 있으면 충돌로 판단
+            has_pattern = all(keyword.lower() in text_content.lower() for keyword in pattern_keywords)
+            has_conflict = any(keyword.lower() in text_content.lower() for keyword in conflicting_keywords)
+            
+            if has_pattern and has_conflict:
+                conflict = RegulationConflict(
+                    conflict_type="agency_conflict",
+                    conflicting_agencies=pattern_info["agencies"],
+                    conflict_description=f"{pattern_name} 관련 규정 충돌 감지",
+                    severity=pattern_info["severity"],
+                    resolution_guidance=f"{pattern_name} 관련 규정을 명확히 하기 위해 관련 기관에 문의하시기 바랍니다.",
+                    affected_requirements=pattern_keywords
+                )
+                conflicts.append(conflict)
+        
+        return conflicts
+
+    def _calculate_validation_score(self, conflicts: List[RegulationConflict], 
+                                  phase_results: Dict[str, Any]) -> float:
+        """검증 점수 계산 (0.0 ~ 1.0)"""
+        base_score = 1.0
+        
+        # 충돌별 점수 차감
+        for conflict in conflicts:
+            if conflict.severity == "critical":
+                base_score -= 0.3
+            elif conflict.severity == "high":
+                base_score -= 0.2
+            elif conflict.severity == "medium":
+                base_score -= 0.1
+            elif conflict.severity == "low":
+                base_score -= 0.05
+        
+        # Phase 결과 완성도 반영
+        completed_phases = 0
+        total_phases = 4
+        
+        for phase_name in ["detailed_regulations", "testing_procedures", "penalties", "validity"]:
+            if phase_results.get(phase_name) is not None:
+                completed_phases += 1
+        
+        completion_bonus = (completed_phases / total_phases) * 0.1
+        
+        final_score = max(0.0, min(1.0, base_score + completion_bonus))
+        return final_score
+
     def format_cross_validation_result(self, result: CrossValidationResult) -> Dict[str, Any]:
         """교차 검증 결과를 API 응답 형식으로 변환"""
         return {

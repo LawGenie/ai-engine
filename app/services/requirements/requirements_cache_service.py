@@ -197,7 +197,7 @@ class RequirementsCacheService:
                     "hsCode": cache_entry.hs_code,
                     "productName": cache_entry.product_name,
                     "analysisType": "requirements",
-                    "analysisResult": cache_entry.analysis_result,
+                    "analysisResult": self._make_json_serializable(cache_entry.analysis_result),
                     "confidenceScore": confidence,
                     "isValid": True
                 }
@@ -208,6 +208,20 @@ class RequirementsCacheService:
         except Exception as e:
             print(f"⚠️ ProductAnalysisCache 저장 실패: {e}")
             return False
+
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """객체를 JSON 직렬화 가능한 형태로 변환"""
+        if hasattr(obj, '__dict__'):
+            # dataclass나 일반 객체인 경우
+            return {key: self._make_json_serializable(value) for key, value in obj.__dict__.items()}
+        elif isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        else:
+            return obj
 
     def _extract_confidence_score(self, analysis_result: Dict[str, Any]) -> float:
         """분석 결과에서 신뢰도 점수 추출. 없으면 0.95로 fallback."""

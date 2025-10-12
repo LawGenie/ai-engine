@@ -1184,13 +1184,9 @@ class RequirementsTools:
                 else:
                     precedents_payload = asyncio.run(self.get_cbp_precedents(hs_code))  # type: ignore
             except RuntimeError:
-                # 이미 상위가 이벤트 루프를 관리 중인 경우, best-effort로 직접 await 시도
-                try:
-                    precedents_payload = self.get_cbp_precedents(hs_code)  # type: ignore
-                    if asyncio.iscoroutine(precedents_payload):
-                        precedents_payload = asyncio.get_event_loop().run_until_complete(precedents_payload)
-                except Exception:
-                    precedents_payload = None
+                # 이미 상위가 이벤트 루프를 관리 중인 경우, None으로 설정
+                print(f"⚠️ 이벤트 루프 충돌 - 판례 조회 스킵")
+                precedents_payload = None
 
             if isinstance(precedents_payload, dict):
                 combined["precedents"] = {

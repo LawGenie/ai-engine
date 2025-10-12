@@ -144,13 +144,30 @@ class SearchService:
             print(f"✅ {agency} 캐시에서 조회")
             return cached_result
         
-        # 검색 실행
-        if strategy.provider == "free_api":
+        # 🚀 하이브리드 검색 개선: 무료 API 우선, 실패시에만 Tavily
+        result = None
+        
+        # 1단계: 무료 API 시도
+        if strategy.provider in ["free_api", "hybrid"]:
+            print(f"🆓 {agency} 무료 API 검색 시도...")
             result = await self._search_free_api(agency, queries)
-        elif strategy.provider == "tavily":
+            
+            # 무료 API 성공시 Tavily 스킵
+            if result and len(result.results) > 0:
+                print(f"✅ {agency} 무료 API 성공 - Tavily 스킵으로 비용 절약!")
+                result.source = "free_api"
+            else:
+                print(f"⚠️ {agency} 무료 API 실패 - Tavily 폴백")
+                result = None
+        
+        # 2단계: Tavily 폴백 (무료 API 실패시 또는 tavily 전용)
+        if not result and strategy.provider in ["tavily", "hybrid"]:
+            print(f"💰 {agency} Tavily 검색 실행...")
             result = await self._search_tavily(agency, queries)
-        else:
-            print(f"❌ 알 수 없는 검색 제공자: {strategy.provider}")
+            if result:
+                result.source = "tavily"
+        elif not result:
+            print(f"❌ {agency} 검색 실패 - 지원되는 제공자 없음")
             return None
         
         if result:

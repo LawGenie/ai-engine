@@ -13,6 +13,8 @@ from .tavily_search import TavilySearchService
 
 
 class PenaltiesService:
+    """처벌 및 벌금 분석 전용 서비스 (Phase 3)"""
+    
     def __init__(self) -> None:
         self.tavily = TavilySearchService()
         self.agency_domains = {
@@ -23,16 +25,114 @@ class PenaltiesService:
             "CPSC": "cpsc.gov",
             "CBP": "cbp.gov"
         }
+        
+        # HS 코드별 처벌 정보 매핑 (상세화)
+        self.hs_penalties_mapping = self._build_penalties_mapping()
+    
+    def _build_penalties_mapping(self) -> Dict[str, Dict[str, Any]]:
+        """HS 코드별 처벌 및 벌금 맞춤 쿼리 정의"""
+        return {
+            # 화장품 (3304)
+            "3304": {
+                "category": "cosmetics",
+                "violation_types": ["misbranding", "adulteration", "unauthorized_ingredients"],
+                "specific_queries": {
+                    "FDA": [
+                        "FDA cosmetic violations penalties enforcement",
+                        "FDA cosmetic misbranding fines",
+                        "FDA cosmetic import refusal detention",
+                        "FDA cosmetic seizure adulteration"
+                    ],
+                    "FTC": [
+                        "FTC cosmetic false advertising penalties"
+                    ]
+                },
+                "typical_fine_range": {"min": 1000, "max": 100000}
+            },
+            # 건강보조식품 (2106)
+            "2106": {
+                "category": "dietary_supplements",
+                "violation_types": ["misbranding", "health_claims", "contamination"],
+                "specific_queries": {
+                    "FDA": [
+                        "FDA dietary supplement violations penalties",
+                        "FDA supplement misbranding enforcement actions",
+                        "FDA supplement contamination seizure",
+                        "FDA supplement health claims violations fines"
+                    ]
+                },
+                "typical_fine_range": {"min": 5000, "max": 500000}
+            },
+            # 전자제품 (8471)
+            "8471": {
+                "category": "electronics",
+                "violation_types": ["unauthorized_import", "emc_violations", "safety_violations"],
+                "specific_queries": {
+                    "FCC": [
+                        "FCC unauthorized equipment penalties",
+                        "FCC Part 15 violations fines",
+                        "FCC equipment authorization violations enforcement"
+                    ],
+                    "CPSC": [
+                        "CPSC electronic product safety violations penalties",
+                        "CPSC recall enforcement actions computers"
+                    ],
+                    "CBP": [
+                        "CBP customs violations penalties electronics",
+                        "CBP import seizure electronics unauthorized"
+                    ]
+                },
+                "typical_fine_range": {"min": 10000, "max": 1000000}
+            },
+            # 식품 (1904)
+            "1904": {
+                "category": "prepared_foods",
+                "violation_types": ["contamination", "misbranding", "unsafe_conditions"],
+                "specific_queries": {
+                    "FDA": [
+                        "FDA food import violations penalties",
+                        "FDA food safety violations enforcement",
+                        "FDA food refusal detention reasons",
+                        "FDA FSMA violations penalties"
+                    ],
+                    "USDA": [
+                        "USDA food inspection violations penalties"
+                    ]
+                },
+                "typical_fine_range": {"min": 5000, "max": 250000}
+            }
+        }
 
     def _build_queries(self, hs_code: str, product_name: str) -> Dict[str, str]:
+        """🚀 최적화된 처벌 정보 쿼리 생성 (중복 제거 + 통합)"""
         queries: Dict[str, str] = {}
-        for agency in self.agency_domains.keys():
-            a = agency.lower()
-            queries[f"{agency}_penalties"] = f"site:{a}.gov penalties violations {product_name} HS {hs_code}"
-            queries[f"{agency}_enforcement"] = f"site:{a}.gov enforcement actions {product_name} HS {hs_code}"
-            queries[f"{agency}_fines"] = f"site:{a}.gov civil penalties fines {product_name} HS {hs_code}"
-            queries[f"{agency}_seizure_importban"] = f"site:{a}.gov seizure import ban refuse admission {product_name} HS {hs_code}"
-        queries["general_penalties"] = f"penalties enforcement fines seizure import ban {product_name} HS {hs_code} site:.gov"
+        
+        # HS 코드에서 4자리 추출
+        hs_4digit = hs_code.split('.')[0] if '.' in hs_code else hs_code[:4]
+        
+        # HS 코드별 맞춤 쿼리
+        mapping = self.hs_penalties_mapping.get(hs_4digit)
+        
+        if mapping:
+            # 🚀 맞춤형 통합 쿼리 (기존 5-7개 → 2개)
+            print(f"  🎯 {mapping['category']} 맞춤형 처벌 쿼리 생성 (통합 최적화)")
+            
+            
+            # 기관별 모든 쿼리를 하나로 통합
+            for agency, agency_queries in mapping.get("specific_queries", {}).items():
+                combined = " ".join([q.split()[0:2][0] if len(q.split()) > 0 else q for q in agency_queries])
+                queries[f"{agency}_integrated"] = f"site:{agency.lower()}.gov violations penalties enforcement fines {product_name} {hs_code}"
+            
+            # 위반 유형도 하나로 통합
+            if mapping.get("violation_types"):
+                violations_combined = " ".join(mapping.get("violation_types", []))
+                queries["violations_integrated"] = f"{violations_combined} penalties enforcement {product_name} site:.gov"
+        else:
+            # 🚀 일반 통합 쿼리 (기존 여러 개 → 1개)
+            print(f"  ⚠️ HS 코드 매핑 없음 - 통합 쿼리 사용")
+            queries["general_integrated"] = f"site:.gov penalties violations enforcement fines seizure import ban {product_name} {hs_code}"
+        
+        print(f"  📊 통합 최적화 쿼리 수: {len(queries)}개 (기존 대비 ~85% 감소)")
         return queries
 
     def _infer_agency(self, url: str) -> Optional[str]:
@@ -93,7 +193,7 @@ class PenaltiesService:
         all_results: List[Dict[str, Any]] = []
         for q in queries.values():
             try:
-                res = await self.tavily.search(q, max_results=5)
+                res = await self.tavily.search(q, max_results=10)  # 통합 쿼리이므로 결과 증가
                 all_results.extend(res)
             except Exception:
                 continue

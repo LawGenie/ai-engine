@@ -2,6 +2,7 @@
 LangGraph Nodes for Requirements Analysis
 각 단계별로 처리하는 노드들
 (Updated: 2025-10-10 - LLM 요약 추가, 타입 에러 수정)
+(Updated: 2025-10-11 - Phase 2-4 전문 서비스 연결)
 """
 
 from typing import Dict, Any, List
@@ -12,6 +13,14 @@ from app.services.requirements.web_scraper import WebScraper
 from app.services.requirements.error_handler import error_handler, WorkflowError, ErrorSeverity, ErrorRecoveryStrategy
 from app.models.requirement_models import RequirementAnalysisRequest
 from datetime import datetime
+import asyncio
+
+# Phase 2-4 전문 서비스 import
+from app.services.requirements.detailed_regulations_service import detailed_regulations_service
+from app.services.requirements.testing_procedures_service import testing_procedures_service
+from app.services.requirements.penalties_service import penalties_service
+from app.services.requirements.validity_service import validity_service
+from app.services.requirements.cross_validation_service import CrossValidationService
 
 
 class RequirementsNodes:
@@ -24,6 +33,15 @@ class RequirementsNodes:
         self.keyword_extractor = None
         self.hf_extractor = None
         self.openai_extractor = None
+        
+        # Phase 2-4 전문 서비스 초기화
+        self.detailed_regulations = detailed_regulations_service
+        self.testing_procedures = testing_procedures_service
+        self.penalties = penalties_service
+        self.validity = validity_service
+        self.cross_validation = CrossValidationService()
+        
+        print("✅ RequirementsNodes 초기화 완료 (Phase 2-4 서비스 포함)")
 
     async def extract_core_keywords(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """상품명/설명에서 핵심 키워드 추출 (간단 휴리스틱).
@@ -608,8 +626,8 @@ class RequirementsNodes:
                     } for agency, data in scraped_data.items()
                 },
                 "scraping_statistics": {
-                    "8digit_hs_code_urls": sum(data.get("hs_code_8digit", {}).get("urls", []) for data in scraped_data.values() if data.get("hs_code_8digit", {}).get("urls")),
-                    "6digit_hs_code_urls": sum(data.get("hs_code_6digit", {}).get("urls", []) for data in scraped_data.values() if data.get("hs_code_6digit", {}).get("urls")),
+                    "8digit_hs_code_urls": sum(len(data.get("hs_code_8digit", {}).get("urls", [])) for data in scraped_data.values()),
+                    "6digit_hs_code_urls": sum(len(data.get("hs_code_6digit", {}).get("urls", [])) for data in scraped_data.values()),
                 }
             }
         }
@@ -670,21 +688,38 @@ class RequirementsNodes:
         
         consolidation_start_time = datetime.now()
         
-        # 참고: CBP 판례 수집 추가
+        # 🆕 FAISS DB에서 판례 수집 (API 호출 대신!)
         request = state.get("request")
-        cbp = None
+        precedents_list = []
         precedents_fetch_start = datetime.now()
+        
         if request:
             try:
-                cbp = await self.tools.get_cbp_precedents(request.hs_code)
+                # FAISS DB에서 판례 가져오기
+                from app.services.requirements.precedent_validation_service import get_precedent_validation_service
+                precedent_validator = get_precedent_validation_service()
+                
+                precedents_list = await precedent_validator._get_precedents_from_db(
+                    hs_code=request.hs_code,
+                    product_name=request.product_name
+                )
+                
                 precedents_fetch_end = datetime.now()
                 precedents_fetch_time = (precedents_fetch_end - precedents_fetch_start).total_seconds() * 1000
-                print(f"📊 CBP 판례 수집 성공: {len(cbp.get('precedents', []))}개 판례 확인됨 ({precedents_fetch_time:.0f}ms)")
+                print(f"📊 FAISS DB 판례 수집 성공: {len(precedents_list)}개 판례 확인됨 ({precedents_fetch_time:.0f}ms)")
+                
+                cbp = {
+                    "hs_code": request.hs_code,
+                    "count": len(precedents_list),
+                    "precedents": precedents_list,
+                    "source": "faiss_db"
+                }
+                
             except Exception as e:
                 cbp = {"error": "precedent_fetch_failed", "error_message": str(e)}
                 precedents_fetch_end = datetime.now()
                 precedents_fetch_time = (precedents_fetch_end - precedents_fetch_start).total_seconds() * 1000
-                print(f"📊 CBP 판례 수집 실패: {e} ({precedents_fetch_time:.0f}ms)")
+                print(f"📊 FAISS DB 판례 수집 실패: {e} ({precedents_fetch_time:.0f}ms)")
 
         # 하이브리드(API+웹) 결과도 통합 (Phase 2-4 포함)
         hybrid = state.get("hybrid_result") or {}
@@ -833,15 +868,460 @@ class RequirementsNodes:
             traceback.print_exc()
             llm_summary = None
         
-        # 상태 업데이트 (기존 상태 유지 + citations + llm_summary 추가)
+        # ========================================
+        # 🚀 Phase 1-4 전문 서비스 호출 (병렬 실행)
+        # ========================================
+        print(f"\n🚀 [PHASE 1-4] 전문 분석 서비스 실행 시작")
+        phase_start = datetime.now()
+        
+        phase_1_result = None  # 세부 규정
+        phase_2_result = None  # 검사 절차
+        phase_3_result = None  # 처벌 벌금
+        phase_4_result = None  # 유효기간
+        detailed_regs_result = None  # Phase 1 결과
+        cross_validation_result = None  # 교차 검증
+        
+        try:
+            # 병렬 실행을 위한 태스크 생성
+            tasks = []
+            
+            if request:
+                # 1단계: 세부 규정 추출 (농약 잔류량, 화학성분 제한 등)
+                task1 = asyncio.create_task(
+                    self.detailed_regulations.analyze(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        product_description=request.product_description or ""
+                    )
+                )
+                tasks.append(("detailed_regulations", task1))
+                
+                # 2단계: 검사 절차 분석
+                task2 = asyncio.create_task(
+                    self.testing_procedures.analyze(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        product_description=request.product_description or ""
+                    )
+                )
+                tasks.append(("testing_procedures", task2))
+                
+                # 3단계: 처벌 벌금 분석
+                task3 = asyncio.create_task(
+                    self.penalties.analyze(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        product_description=request.product_description or ""
+                    )
+                )
+                tasks.append(("penalties", task3))
+                
+                # 4단계: 유효기간 분석
+                task4 = asyncio.create_task(
+                    self.validity.analyze(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        product_description=request.product_description or ""
+                    )
+                )
+                tasks.append(("validity", task4))
+            
+            # 병렬 실행 및 결과 수집
+            if tasks:
+                print(f"  🔄 {len(tasks)}개 분석 태스크 병렬 실행 중...")
+                completed_tasks = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+                
+                # 결과 할당
+                for i, (name, _) in enumerate(tasks):
+                    result = completed_tasks[i]
+                    if isinstance(result, Exception):
+                        print(f"  ❌ {name} 분석 실패: {result}")
+                    else:
+                        print(f"  ✅ {name} 분석 완료 - {len(result.get('sources', []))}개 출처")
+                        if name == "detailed_regulations":
+                            detailed_regs_result = result
+                        elif name == "testing_procedures":
+                            phase_2_result = result
+                        elif name == "penalties":
+                            phase_3_result = result
+                        elif name == "validity":
+                            phase_4_result = result
+            
+            # 교차 검증 (모든 결과 수집 후 실행)
+            if llm_summary and request:
+                print(f"  🔍 교차 검증 실행 중...")
+                try:
+                    cross_validation_result = await self.cross_validation.validate_requirements(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        llm_summary=llm_summary,
+                        phase_results={
+                            "detailed_regulations": detailed_regs_result,
+                            "testing_procedures": phase_2_result,
+                            "penalties": phase_3_result,
+                            "validity": phase_4_result
+                        }
+                    )
+                    print(f"  ✅ 교차 검증 완료 - 검증점수: {cross_validation_result.validation_score:.2f}, 충돌: {len(cross_validation_result.conflicts_found)}건")
+                except Exception as e:
+                    print(f"  ⚠️ 교차 검증 실패: {e}")
+                    cross_validation_result = None
+            
+            # 💾 판례 검증 전 중간 결과 저장 (디버깅용)
+            if request:
+                try:
+                    import json
+                    from pathlib import Path
+                    
+                    # 순환 참조 방지를 위한 안전한 직렬화
+                    def safe_serialize(obj):
+                        """객체를 안전하게 dict로 변환"""
+                        if obj is None:
+                            return None
+                        elif hasattr(obj, '__dict__'):
+                            return {k: safe_serialize(v) for k, v in obj.__dict__.items()}
+                        elif isinstance(obj, dict):
+                            return {k: safe_serialize(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [safe_serialize(item) for item in obj]
+                        elif isinstance(obj, (str, int, float, bool)):
+                            return obj
+                        else:
+                            return str(obj)
+                    
+                    intermediate_data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "hs_code": request.hs_code,
+                        "product_name": request.product_name,
+                        "llm_summary": safe_serialize(llm_summary),
+                        "phase_1_detailed_regulations": safe_serialize(detailed_regs_result),
+                        "phase_2_testing_procedures": safe_serialize(phase_2_result),
+                        "phase_3_penalties": safe_serialize(phase_3_result),
+                        "phase_4_validity": safe_serialize(phase_4_result),
+                        "cross_validation": safe_serialize(cross_validation_result),
+                        "certifications": safe_serialize(all_certifications),
+                        "documents": safe_serialize(all_documents),
+                        "sources": safe_serialize(all_sources)
+                    }
+                    
+                    # 안전한 파일명 생성
+                    safe_filename = request.product_name.replace(" ", "_").replace("/", "_")[:50]
+                    output_dir = Path("requirements_intermediate")
+                    output_dir.mkdir(exist_ok=True)
+                    
+                    output_file = output_dir / f"intermediate_{safe_filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    
+                    with open(output_file, "w", encoding="utf-8") as f:
+                        json.dump(intermediate_data, f, indent=2, ensure_ascii=False, default=str)
+                    
+                    print(f"  💾 중간 결과 저장 완료: {output_file}")
+                    
+                except Exception as e:
+                    print(f"  ⚠️ 중간 결과 저장 실패 (계속 진행): {e}")
+            
+            # 🆕 판례 기반 검증 (FAISS DB 사용)
+            precedent_validation_result = None
+            if request and precedents_list:
+                print(f"  🔍 판례 기반 검증 실행 중...")
+                try:
+                    from app.services.requirements.precedent_validation_service import get_precedent_validation_service
+                    precedent_validator = get_precedent_validation_service()
+                    
+                    precedent_validation_result = await precedent_validator.validate_requirements(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        our_requirements={
+                            "certifications": all_certifications,
+                            "documents": all_documents
+                        },
+                        precedents=precedents_list
+                    )
+                    
+                    print(f"  ✅ 판례 검증 완료 - 점수: {precedent_validation_result.validation_score:.2f}, 판정: {precedent_validation_result.verdict['status']}")
+                    print(f"    📊 일치: {len(precedent_validation_result.matched_requirements)}개, 누락: {len(precedent_validation_result.missing_requirements)}개, Red Flags: {len(precedent_validation_result.red_flags)}개")
+                    
+                except Exception as e:
+                    print(f"  ⚠️ 판례 검증 실패: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    precedent_validation_result = None
+            
+            # 🚀 LLM 요약에 Phase 1-4 결과 포함하여 재생성
+            if request and (detailed_regs_result or phase_2_result or phase_3_result or phase_4_result):
+                print(f"  🔄 Phase 1-4 결과를 포함한 LLM 요약 재생성...")
+                try:
+                    # Phase 1-4 결과를 raw_documents에 추가
+                    phase_documents = []
+                    
+                    if detailed_regs_result:
+                        phase_documents.append({
+                            "title": f"Phase 1: 세부 규정 ({request.hs_code})",
+                            "content": f"상세 규정 분석 결과: {detailed_regs_result.get('summary', '')}",
+                            "url": "phase_1_result",
+                            "source": "detailed_regulations_service"
+                        })
+                    
+                    if phase_2_result:
+                        phase_documents.append({
+                            "title": f"Phase 2: 검사 절차 ({request.hs_code})",
+                            "content": f"검사 절차 분석 결과: {phase_2_result.get('summary', '')}",
+                            "url": "phase_2_result",
+                            "source": "testing_procedures_service"
+                        })
+                    
+                    if phase_3_result:
+                        phase_documents.append({
+                            "title": f"Phase 3: 처벌 정보 ({request.hs_code})",
+                            "content": f"처벌 정보 분석 결과: {phase_3_result.get('summary', '')}",
+                            "url": "phase_3_result",
+                            "source": "penalties_service"
+                        })
+                    
+                    if phase_4_result:
+                        phase_documents.append({
+                            "title": f"Phase 4: 유효기간 ({request.hs_code})",
+                            "content": f"유효기간 분석 결과: {phase_4_result.get('summary', '')}",
+                            "url": "phase_4_result",
+                            "source": "validity_service"
+                        })
+                    
+                    # 기존 문서와 Phase 결과 합치기
+                    enhanced_documents = raw_documents + phase_documents
+                    
+                    # LLM 요약 재생성 (raw_summary로 받아서 확장 필드 포함)
+                    enhanced_summary_raw = await llm_service._call_gpt_summary(
+                        hs_code=request.hs_code,
+                        product_name=request.product_name,
+                        document_texts=llm_service._extract_document_texts(enhanced_documents)
+                    )
+                    
+                    if enhanced_summary_raw:
+                        # 기존 요약을 Phase 1-4 결과로 확장 (모든 GPT 필드 포함)
+                        llm_summary = {
+                            # 기본 필드
+                            "critical_requirements": enhanced_summary_raw.get("critical_requirements", []),
+                            "required_documents": enhanced_summary_raw.get("required_documents", []),
+                            "compliance_steps": enhanced_summary_raw.get("compliance_steps", []),
+                            "estimated_costs": enhanced_summary_raw.get("estimated_costs", {}),
+                            "timeline": enhanced_summary_raw.get("timeline", "정보 없음"),
+                            "risk_factors": enhanced_summary_raw.get("risk_factors", []),
+                            "recommendations": enhanced_summary_raw.get("recommendations", []),
+                            "confidence_score": enhanced_summary_raw.get("confidence_score", 0.0),
+                            "model_used": "gpt-4o-mini",
+                            "tokens_used": enhanced_summary_raw.get("tokens_used", 0),
+                            "cost": enhanced_summary_raw.get("cost", 0.0),
+                            # 확장 필드 (새로 추가된 것들)
+                            "execution_checklist": enhanced_summary_raw.get("execution_checklist"),
+                            "cost_breakdown": enhanced_summary_raw.get("cost_breakdown"),
+                            "risk_matrix": enhanced_summary_raw.get("risk_matrix"),
+                            "compliance_score": enhanced_summary_raw.get("compliance_score"),
+                            "market_access": enhanced_summary_raw.get("market_access"),
+                            # Phase 1-4 결과 추가
+                            "phase_1_detailed_regulations": detailed_regs_result,
+                            "phase_2_testing_procedures": phase_2_result,
+                            "phase_3_penalties": phase_3_result,
+                            "phase_4_validity": phase_4_result,
+                            "cross_validation": cross_validation_result
+                        }
+                        print(f"  ✅ Phase 1-4 포함 LLM 요약 재생성 완료 (확장 필드 포함)")
+                    
+                except Exception as e:
+                    print(f"  ⚠️ Phase 1-4 포함 LLM 요약 실패: {e}")
+                    # 실패시 기존 요약 유지
+            
+        except Exception as e:
+            print(f"  ❌ Phase 2-4 분석 전체 실패: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        phase_end = datetime.now()
+        phase_duration = (phase_end - phase_start).total_seconds() * 1000
+        print(f"✅ [PHASE 2-4] 전문 분석 완료 - 소요시간: {phase_duration:.0f}ms")
+        
+        # Phase 2-4 결과를 메타데이터에 추가
+        phase_metadata = {
+            "phase_2_4_analysis": {
+                "processing_time_ms": phase_duration,
+                "detailed_regulations": {
+                    "success": detailed_regs_result is not None,
+                    "agencies": detailed_regs_result.get("agencies", []) if detailed_regs_result else [],
+                    "sources_count": len(detailed_regs_result.get("sources", [])) if detailed_regs_result else 0
+                },
+                "testing_procedures": {
+                    "success": phase_2_result is not None,
+                    "inspection_cycle": phase_2_result.get("inspection_cycle") if phase_2_result else "unknown",
+                    "estimated_cost": phase_2_result.get("estimates", {}).get("estimated_cost_band") if phase_2_result else "unknown"
+                },
+                "penalties": {
+                    "success": phase_3_result is not None,
+                    "fine_range": phase_3_result.get("fine_range", {}) if phase_3_result else {}
+                },
+                "validity": {
+                    "success": phase_4_result is not None,
+                    "validity_period": phase_4_result.get("validity") if phase_4_result else "unknown"
+                },
+                "cross_validation": {
+                    "success": cross_validation_result is not None,
+                    "validation_score": cross_validation_result.validation_score if cross_validation_result else 0.0,
+                    "conflicts_found": len(cross_validation_result.conflicts_found) if cross_validation_result else 0
+                }
+            }
+        }
+        state["detailed_metadata"] = state.get("detailed_metadata", {})
+        state["detailed_metadata"].update(phase_metadata)
+        
+        # Phase 1-4 결과 디버깅 로그
+        print(f"  🔍 [DEBUG] Phase 결과 상태:")
+        print(f"    📋 Phase 1 (detailed_regulations): {'✅' if detailed_regs_result else '❌'}")
+        print(f"    🧪 Phase 2 (testing_procedures): {'✅' if phase_2_result else '❌'}")
+        print(f"    ⚖️ Phase 3 (penalties): {'✅' if phase_3_result else '❌'}")
+        print(f"    ⏰ Phase 4 (validity): {'✅' if phase_4_result else '❌'}")
+        print(f"    🔍 교차 검증 (cross_validation): {'✅' if cross_validation_result else '❌'}")
+        
+        # 🎯 통합 신뢰도 계산 (판례 검증 + 교차 검증 + 출처 신뢰도)
+        overall_confidence = None
+        if precedent_validation_result or cross_validation_result:
+            print(f"  📊 통합 신뢰도 계산 중...")
+            try:
+                # 출처 신뢰도 계산
+                official_sources_count = len([s for s in all_sources if '.gov' in str(s.get('url', ''))])
+                source_reliability_score = official_sources_count / len(all_sources) if all_sources else 0.5
+                
+                # 가중 평균 계산
+                precedent_score = precedent_validation_result.validation_score if precedent_validation_result else 0.5
+                cross_score = cross_validation_result.validation_score if cross_validation_result else 0.5
+                
+                overall_score = (precedent_score * 0.4) + (cross_score * 0.3) + (source_reliability_score * 0.3)
+                
+                # 모든 Red Flags 수집
+                all_red_flags = []
+                if precedent_validation_result:
+                    all_red_flags.extend(precedent_validation_result.red_flags)
+                if cross_validation_result:
+                    for conflict in cross_validation_result.conflicts_found:
+                        all_red_flags.append({
+                            "type": "regulation_conflict",
+                            "severity": conflict.severity,
+                            "description": conflict.conflict_description,
+                            "agencies": conflict.conflicting_agencies
+                        })
+                
+                # 최종 판정
+                if overall_score >= 0.85 and len(all_red_flags) == 0:
+                    verdict_status = "RELIABLE"
+                    confidence_level = "HIGH"
+                elif overall_score >= 0.7:
+                    verdict_status = "NEEDS_REVIEW"
+                    confidence_level = "MEDIUM"
+                else:
+                    verdict_status = "UNRELIABLE"
+                    confidence_level = "LOW"
+                
+                overall_confidence = {
+                    "overall_score": overall_score,
+                    "confidence_level": confidence_level,
+                    "breakdown": {
+                        "precedent_validation": {"score": precedent_score, "weight": 0.4},
+                        "cross_validation": {"score": cross_score, "weight": 0.3},
+                        "source_reliability": {"score": source_reliability_score, "weight": 0.3}
+                    },
+                    "red_flags": all_red_flags,
+                    "red_flags_count": len(all_red_flags),
+                    "verdict": {
+                        "status": verdict_status,
+                        "confidence": confidence_level,
+                        "reason": f"판례 검증 {precedent_score:.0%}, 교차 검증 {cross_score:.0%}, 출처 신뢰도 {source_reliability_score:.0%}",
+                        "action": "수입 진행 가능" if verdict_status == "RELIABLE" else 
+                                 "추가 확인 필요" if verdict_status == "NEEDS_REVIEW" else 
+                                 "전문가 상담 권장"
+                    }
+                }
+                
+                print(f"  ✅ 통합 신뢰도: {overall_score:.2f} ({confidence_level}) - {verdict_status}")
+                
+            except Exception as e:
+                print(f"  ⚠️ 통합 신뢰도 계산 실패: {e}")
+                overall_confidence = None
+        
+        # 상태 업데이트 (기존 상태 유지 + citations + llm_summary + Phase 1-4 결과 + 판례 검증 추가)
         state["consolidated_results"] = {
             "certifications": all_certifications,
             "documents": all_documents,
             "sources": all_sources,
             "llm_summary": llm_summary,
             "precedents": cbp.get("precedents", []) if cbp else [],
-            "citations": citations  # 출처 정보 추가
+            "citations": citations,
+            # Phase 1-4 전문 분석 결과 추가 (Phase 1도 포함!)
+            "detailed_regulations": detailed_regs_result,  # Phase 1
+            "testing_procedures": phase_2_result,         # Phase 2
+            "penalties": phase_3_result,                  # Phase 3
+            "validity": phase_4_result,                   # Phase 4
+            "cross_validation": cross_validation_result,  # 교차 검증
+            # 🆕 판례 기반 검증 결과
+            "precedent_validation": {
+                "validation_score": precedent_validation_result.validation_score if precedent_validation_result else None,
+                "precedents_analyzed": precedent_validation_result.precedents_analyzed if precedent_validation_result else 0,
+                "precedents_source": precedent_validation_result.precedents_source if precedent_validation_result else "none",
+                "matched_requirements": precedent_validation_result.matched_requirements if precedent_validation_result else [],
+                "missing_requirements": precedent_validation_result.missing_requirements if precedent_validation_result else [],
+                "extra_requirements": precedent_validation_result.extra_requirements if precedent_validation_result else [],
+                "red_flags": precedent_validation_result.red_flags if precedent_validation_result else [],
+                "verdict": precedent_validation_result.verdict if precedent_validation_result else {}
+            } if precedent_validation_result else None,
+            # 🆕 통합 신뢰도
+            "overall_confidence": overall_confidence,
+            # 🆕 검증 요약 (Frontend용 간단 버전)
+            "verification_summary": {
+                "verdict": overall_confidence['verdict']['status'] if overall_confidence else "UNKNOWN",
+                "confidence_score": overall_confidence['overall_score'] if overall_confidence else 0.5,
+                "confidence_level": overall_confidence['confidence_level'] if overall_confidence else "MEDIUM",
+                "red_flags_count": len(overall_confidence['red_flags']) if overall_confidence else 0,
+                "action_recommendation": overall_confidence['verdict']['action'] if overall_confidence else "분석 결과 확인 필요"
+            } if overall_confidence else None
         }
         state["precedents_meta"] = cbp
         state["next_action"] = "complete"
+        
+        # 💾 최종 결과 저장 (판례 검증 포함)
+        if request:
+            try:
+                import json
+                from pathlib import Path
+                
+                # 순환 참조 방지를 위한 안전한 직렬화
+                def safe_serialize(obj):
+                    """객체를 안전하게 dict로 변환"""
+                    if obj is None:
+                        return None
+                    elif hasattr(obj, '__dict__'):
+                        return {k: safe_serialize(v) for k, v in obj.__dict__.items()}
+                    elif isinstance(obj, dict):
+                        return {k: safe_serialize(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [safe_serialize(item) for item in obj]
+                    elif isinstance(obj, (str, int, float, bool)):
+                        return obj
+                    else:
+                        return str(obj)
+                
+                # 안전한 파일명 생성
+                safe_filename = request.product_name.replace(" ", "_").replace("/", "_")[:50]
+                output_dir = Path("requirements_final")
+                output_dir.mkdir(exist_ok=True)
+                
+                output_file = output_dir / f"final_{safe_filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                
+                # 안전하게 직렬화
+                final_data = safe_serialize(state["consolidated_results"])
+                
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(final_data, f, indent=2, ensure_ascii=False, default=str)
+                
+                print(f"  💾 최종 결과 저장 완료: {output_file}")
+                
+            except Exception as e:
+                print(f"  ⚠️ 최종 결과 저장 실패 (계속 진행): {e}")
+                import traceback
+                traceback.print_exc()
+        
         return state
