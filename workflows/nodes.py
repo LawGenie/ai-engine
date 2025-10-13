@@ -882,7 +882,7 @@ class RequirementsNodes:
         cross_validation_result = None  # 교차 검증
         
         try:
-            # 병렬 실행을 위한 태스크 생성
+            # 병렬 실행을 위한 태스크 생성 (판례 결과를 파라미터로 전달)
             tasks = []
             
             if request:
@@ -1019,7 +1019,7 @@ class RequirementsNodes:
                 except Exception as e:
                     print(f"  ⚠️ 중간 결과 저장 실패 (계속 진행): {e}")
             
-            # 🆕 판례 기반 검증 (FAISS DB 사용)
+            # 🆕 판례 기반 검증 (FAISS DB 사용) - 교차 검증과 같은 위치에서 실행
             precedent_validation_result = None
             if request and precedents_list:
                 print(f"  🔍 판례 기반 검증 실행 중...")

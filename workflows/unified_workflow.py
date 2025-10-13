@@ -45,6 +45,7 @@ class UnifiedWorkflowState:
     hs_code: str
     product_name: str
     product_description: str = ""
+    precedent_analysis: Dict[str, Any] = None  # 판례 분석 결과 (최적화)
     
     # 중간 결과
     core_keywords: List[str] = None
@@ -425,7 +426,8 @@ class UnifiedRequirementsWorkflow:
         product_name: str, 
         product_description: str = "",
         force_refresh: bool = False,
-        is_new_product: bool = False
+        is_new_product: bool = False,
+        precedent_analysis: Dict[str, Any] = None  # 판례 분석 결과 (최적화)
     ) -> Dict[str, Any]:
         """요구사항 분석 실행 (통합 워크플로우 + 병렬 처리)"""
         
@@ -448,6 +450,7 @@ class UnifiedRequirementsWorkflow:
                 hs_code=hs_code,
                 product_name=product_name,
                 product_description=product_description,
+                precedent_analysis=precedent_analysis,  # 판례 분석 결과 전달 (최적화)
                 detailed_metadata={},
                 errors=[]
             )

@@ -114,25 +114,20 @@ class PenaltiesService:
         mapping = self.hs_penalties_mapping.get(hs_4digit)
         
         if mapping:
-            # 🚀 맞춤형 통합 쿼리 (기존 5-7개 → 2개)
-            print(f"  🎯 {mapping['category']} 맞춤형 처벌 쿼리 생성 (통합 최적화)")
+            # 🚀 초통합 쿼리 전략 (기존 5-7개 → 1개!) - 모든 정보를 하나의 쿼리로
+            print(f"  🎯 {mapping['category']} 맞춤형 처벌 쿼리 생성 (초통합 최적화)")
             
+            # 모든 기관과 위반 유형을 하나의 쿼리로 통합
+            all_agencies = " OR ".join([f"site:{agency.lower()}.gov" for agency in mapping.get("specific_queries", {}).keys()])
+            violation_types = " ".join(mapping.get("violation_types", []))
             
-            # 기관별 모든 쿼리를 하나로 통합
-            for agency, agency_queries in mapping.get("specific_queries", {}).items():
-                combined = " ".join([q.split()[0:2][0] if len(q.split()) > 0 else q for q in agency_queries])
-                queries[f"{agency}_integrated"] = f"site:{agency.lower()}.gov violations penalties enforcement fines {product_name} {hs_code}"
-            
-            # 위반 유형도 하나로 통합
-            if mapping.get("violation_types"):
-                violations_combined = " ".join(mapping.get("violation_types", []))
-                queries["violations_integrated"] = f"{violations_combined} penalties enforcement {product_name} site:.gov"
+            queries["penalties_comprehensive"] = f"({all_agencies}) {violation_types} violations penalties enforcement fines detention seizure {product_name} {hs_code}"
         else:
             # 🚀 일반 통합 쿼리 (기존 여러 개 → 1개)
             print(f"  ⚠️ HS 코드 매핑 없음 - 통합 쿼리 사용")
             queries["general_integrated"] = f"site:.gov penalties violations enforcement fines seizure import ban {product_name} {hs_code}"
         
-        print(f"  📊 통합 최적화 쿼리 수: {len(queries)}개 (기존 대비 ~85% 감소)")
+        print(f"  📊 초통합 최적화 쿼리 수: {len(queries)}개 (기존 대비 ~90% 감소)")
         return queries
 
     def _infer_agency(self, url: str) -> Optional[str]:
@@ -193,7 +188,7 @@ class PenaltiesService:
         all_results: List[Dict[str, Any]] = []
         for q in queries.values():
             try:
-                res = await self.tavily.search(q, max_results=10)  # 통합 쿼리이므로 결과 증가
+                res = await self.tavily.search(q, max_results=20)  # 증가: 검색 횟수 감소, 더 많은 출처 확보
                 all_results.extend(res)
             except Exception:
                 continue

@@ -60,17 +60,21 @@ You are an expert US import compliance analyst. Analyze the import regulations f
 ## Your Task:
 Provide a comprehensive, actionable analysis in JSON format.
 
-**🚨 CRITICAL - SOURCE URL REQUIREMENTS**:
-1. **NEVER** use "ACTUAL_URL_FROM_SOURCES_ABOVE" as-is
-2. **ALWAYS** extract real URLs from the ## Available Sources section above
-3. Match each requirement/document to its corresponding source URL
-4. If no specific URL matches, use the agency's main website:
-   - FDA: https://www.fda.gov/
-   - USDA: https://www.usda.gov/
-   - EPA: https://www.epa.gov/
-   - CPSC: https://www.cpsc.gov/
-   - CBP: https://www.cbp.gov/
-5. Every "source_url" field MUST be a valid HTTP/HTTPS URL
+**🚨🚨🚨 CRITICAL - SOURCE URL REQUIREMENTS 🚨🚨🚨**:
+1. **ABSOLUTELY FORBIDDEN**: Using "ACTUAL_URL_FROM_SOURCES_ABOVE" or "https://..." as placeholder
+2. **MANDATORY**: Extract COMPLETE, FULL URLs from the ## Available Sources section above
+3. **EXAMPLE OF CORRECT URL**: "https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics"
+4. **EXAMPLE OF WRONG URL**: "https://www.fda.gov/cosmetics" or "ACTUAL_URL_FROM_SOURCES_ABOVE" 
+5. Match each requirement/document to its MOST SPECIFIC source URL from the list above
+6. If you cannot find a specific matching URL in the sources, use the agency's DETAILED regulation page:
+   - FDA cosmetics: https://www.fda.gov/cosmetics/cosmetics-laws-regulations
+   - FDA food: https://www.fda.gov/food/guidance-regulation-food-and-dietary-supplements
+   - USDA: https://www.usda.gov/topics/trade
+   - EPA: https://www.epa.gov/regulatory-information-topic
+   - CPSC: https://www.cpsc.gov/Regulations-Laws--Standards
+   - CBP: https://www.cbp.gov/trade/basic-import-export
+7. **VALIDATION**: Every "source_url" field MUST be a COMPLETE HTTP/HTTPS URL (minimum 30 characters)
+8. **VERIFICATION**: Before finalizing, check that NO field contains "ACTUAL_URL" or placeholder text
 
 ## Response Format (JSON with Bilingual Support):
 **CRITICAL INSTRUCTIONS**: 
@@ -135,7 +139,7 @@ DO NOT translate:
             "requirement": "Specific requirement description",
             "requirement_ko": "요구사항 한국어 설명",
             "agency": "FDA/USDA/EPA/etc",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "severity": "mandatory/recommended",
             "penalty_if_violated": "Brief description of consequences",
             "penalty_if_violated_ko": "위반 시 처벌 한국어 설명",
@@ -149,7 +153,7 @@ DO NOT translate:
             "document_ko": "문서명 한국어",
             "issuing_authority": "Who issues this",
             "issuing_authority_ko": "발급 기관 한국어",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "estimated_time": "Processing time",
             "estimated_time_ko": "소요 시간 한국어",
             "notes": "Important details",
@@ -163,16 +167,16 @@ DO NOT translate:
             "action_ko": "조치 사항 한국어",
             "responsible_party": "Who should do this",
             "responsible_party_ko": "담당자 한국어",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "estimated_duration": "Time needed",
             "estimated_duration_ko": "소요 시간 한국어",
             "dependencies": ["Previous steps if any"]
         }}
     ],
     "estimated_costs": {{ // ⚠️ REQUIRED - Calculate based on actual requirements
-        "certification": {{"min": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "max": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on X certifications required"}},
-        "testing": {{"min": [CALCULATE_BASED_ON_TEST_COUNT], "max": [CALCULATE_BASED_ON_TEST_COUNT], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on Y tests needed"}},
-        "legal_review": {{"min": [CALCULATE_BASED_ON_COMPLEXITY], "max": [CALCULATE_BASED_ON_COMPLEXITY], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on regulatory complexity"}},
+        "certification": {{"min": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "max": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "currency": "USD", "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - e.g., https://www.fda.gov/industry/registration-food-facilities]", "reasoning": "Based on X certifications required"}},
+        "testing": {{"min": [CALCULATE_BASED_ON_TEST_COUNT], "max": [CALCULATE_BASED_ON_TEST_COUNT], "currency": "USD", "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - e.g., https://www.fda.gov/cosmetics/cosmetics-science-research/product-testing-cosmetics]", "reasoning": "Based on Y tests needed"}},
+        "legal_review": {{"min": [CALCULATE_BASED_ON_COMPLEXITY], "max": [CALCULATE_BASED_ON_COMPLEXITY], "currency": "USD", "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - e.g., https://www.fda.gov/about-fda/contact-fda]", "reasoning": "Based on regulatory complexity"}},
         "total": {{"min": [SUM_OF_MINIMUMS], "max": [SUM_OF_MAXIMUMS], "currency": "USD"}},
         "notes": "Estimates based on [SPECIFY_BASIS: e.g., typical FDA cosmetic import, FDA food facility, etc.]"
     }},
@@ -181,7 +185,7 @@ DO NOT translate:
         "typical_days": [AVERAGE_SCENARIO_BASED_ON_REQUIREMENTS],
         "maximum_days": [WORST_CASE_BASED_ON_REQUIREMENTS],
         "critical_path": ["ACTUAL step 1 from requirements", "ACTUAL step 2", "etc"],
-        "source_url": "ACTUAL_URL",
+        "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - Must be full URL from sources above]",
         "reasoning": "Timeline based on [SPECIFY: e.g., FDA review + testing + documentation prep]"
     }},
     "risk_factors": [
@@ -210,7 +214,7 @@ DO NOT translate:
             "element": "Ingredient list/Country of origin/etc",
             "requirement": "Specific requirement",
             "agency": "FDA/FTC/etc",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "format": "Required format",
             "placement": "Where on package",
             "language": "English/Bilingual",
@@ -223,7 +227,7 @@ DO NOT translate:
             "status": "prohibited/restricted",
             "max_concentration": "If restricted",
             "agency": "Regulating agency",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "alternatives": ["Safe alternatives if available"]
         }}
     ],
@@ -233,7 +237,7 @@ DO NOT translate:
             "required_for": "Product categories",
             "deadline": "When to submit",
             "submission_method": "How to submit",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "processing_time": "Expected time",
             "consequences_if_missed": "What happens"
         }}
@@ -246,7 +250,7 @@ DO NOT translate:
             "accredited_labs": ["Lab names"],
             "cost_per_test": {{"min": [ACTUAL_COST_MIN], "max": [ACTUAL_COST_MAX], "currency": "USD", "reasoning": "Based on test type complexity"}},
             "turnaround_time": "Days",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "pass_criteria": "Acceptance criteria"
         }}
     ],
@@ -258,7 +262,7 @@ DO NOT translate:
             "cost_range": {{"min": [ACTUAL_CERT_COST_MIN], "max": [ACTUAL_CERT_COST_MAX], "currency": "USD", "reasoning": "Based on certification scope"}},
             "validity": "Duration",
             "recognized_bodies": ["Certifying organizations"],
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "market_advantage": "Business benefit"
         }}
     ],
@@ -273,7 +277,7 @@ DO NOT translate:
             "limitations_ko": "면제되지 않는 사항 한국어",
             "how_to_claim": "Documentation or process needed",
             "how_to_claim_ko": "신청 방법 한국어",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "notes": "Important caveats",
             "notes_ko": "주의사항 한국어"
         }}
@@ -296,7 +300,7 @@ DO NOT translate:
             "state": "California/New York/etc",
             "requirement": "Specific state requirement",
             "applies_to": "Product categories",
-            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "penalty": "State-level penalties"
         }}
     ],
@@ -343,7 +347,7 @@ DO NOT translate:
                 "dependencies": ["Prerequisite tasks"],
                 "success_criteria": "How to verify completion",
                 "success_criteria_ko": "완료 확인 방법 한국어",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ],
         "during_import": [
@@ -353,7 +357,7 @@ DO NOT translate:
                 "timing": "When during import",
                 "timing_ko": "수입 중 시점 한국어",
                 "estimated_hours": 4,
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ],
         "post_import": [
@@ -362,7 +366,7 @@ DO NOT translate:
                 "task_ko": "수입 후 준수 작업 한국어",
                 "deadline": "When to complete",
                 "estimated_hours": 1,
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ]
     }},
@@ -388,7 +392,7 @@ DO NOT translate:
                 "potential_savings_ko": "절약 금액 한국어",
                 "trade_offs": "What you give up",
                 "trade_offs_ko": "대가 한국어",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ]
     }},
@@ -403,7 +407,7 @@ DO NOT translate:
                 "detection_method_ko": "조기 감지 방법 한국어",
                 "contingency_plan": "What to do if it happens",
                 "contingency_plan_ko": "발생시 대응 방안 한국어",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ],
         "medium_risk": [
@@ -414,7 +418,7 @@ DO NOT translate:
                 "impact": "medium",
                 "monitoring_frequency": "How often to check",
                 "monitoring_frequency_ko": "확인 주기 한국어",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ]
     }},
@@ -462,7 +466,7 @@ DO NOT translate:
                 "action_plan_ko": "개선 방안 한국어",
                 "priority": "high/medium/low",
                 "estimated_effort": "hours/days/weeks",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ]
     }},
@@ -476,7 +480,7 @@ DO NOT translate:
                 "certifications_needed_ko": ["추가 인증 한국어"],
                 "compliance_deadline": "When to comply",
                 "compliance_deadline_ko": "준수 시한 한국어",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
             }}
         ],
         "state_regulations": [
@@ -488,7 +492,189 @@ DO NOT translate:
                 "applies_to_ko": "적용 상품 카테고리 한국어",
                 "penalty": "State-level penalty",
                 "penalty_ko": "주별 처벌 한국어",
-                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+            }}
+        ]
+    }},
+    "product_specific_analysis": {{ // 🆕 NEW - Product-specific characteristics and requirements
+        "ingredient_analysis": [
+            {{
+                "ingredient": "Main ingredient name",
+                "ingredient_ko": "주요 성분명 한국어",
+                "safety_status": "approved/restricted/banned",
+                "regulatory_classification": "Classification category",
+                "restrictions": "Specific restrictions if any",
+                "restrictions_ko": "제한 사항 한국어",
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE]"
+            }}
+        ],
+        "packaging_requirements": {{
+            "material_requirements": "Required packaging materials",
+            "material_requirements_ko": "포장 재질 요구사항 한국어",
+            "volume_specifications": "Volume/size requirements",
+            "special_handling": "Special handling needs",
+            "special_handling_ko": "특수 취급 요구사항 한국어",
+            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE]"
+        }},
+        "preservation_requirements": {{
+            "storage_conditions": "Temperature/humidity requirements",
+            "storage_conditions_ko": "보관 조건 한국어",
+            "shelf_life": "Expected shelf life",
+            "microbial_risk": "high/medium/low",
+            "preservation_methods": ["Required preservation methods"],
+            "preservation_methods_ko": ["보존 방법 한국어"]
+        }}
+    }},
+    "market_entry_strategy": {{ // 🆕 NEW - Phased market entry plan
+        "entry_phases": [
+            {{
+                "phase": "pre_import/customs_clearance/post_import",
+                "phase_ko": "단계명 한국어",
+                "duration": "X-Y days",
+                "key_requirements": ["Requirement 1", "Requirement 2"],
+                "key_requirements_ko": ["요구사항1 한국어", "요구사항2 한국어"],
+                "success_criteria": "How to measure success",
+                "success_criteria_ko": "성공 기준 한국어",
+                "bottlenecks": ["Potential bottlenecks"],
+                "bottlenecks_ko": ["병목 현상 한국어"]
+            }}
+        ],
+        "success_probability": 0.85,
+        "critical_success_factors": [
+            {{
+                "factor": "Success factor description",
+                "factor_ko": "성공 요인 한국어",
+                "importance": "high/medium/low",
+                "current_status": "ready/in_progress/not_started",
+                "action_needed": "What needs to be done",
+                "action_needed_ko": "필요 조치 한국어"
+            }}
+        ],
+        "alternative_routes": [
+            {{
+                "route": "Alternative approach",
+                "route_ko": "대안 경로 한국어",
+                "pros": ["Advantage 1", "Advantage 2"],
+                "pros_ko": ["장점1 한국어", "장점2 한국어"],
+                "cons": ["Disadvantage 1", "Disadvantage 2"],
+                "cons_ko": ["단점1 한국어", "단점2 한국어"],
+                "recommendation": "When to use this route",
+                "recommendation_ko": "사용 권장 상황 한국어"
+            }}
+        ]
+    }},
+    "competitive_landscape": {{ // 🆕 NEW - Market and competitive analysis
+        "similar_products": [
+            {{
+                "category": "Product category",
+                "category_ko": "제품 카테고리 한국어",
+                "market_share": "growing/stable/declining",
+                "regulatory_precedent": "established/emerging/unclear",
+                "typical_challenges": ["Common challenge 1", "Common challenge 2"],
+                "typical_challenges_ko": ["일반적 과제1 한국어", "일반적 과제2 한국어"],
+                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE]"
+            }}
+        ],
+        "market_trends": {{
+            "demand_trend": "increasing/stable/decreasing",
+            "consumer_preferences": "Key consumer preferences",
+            "consumer_preferences_ko": "소비자 선호도 한국어",
+            "regulatory_trend": "tightening/stable/relaxing",
+            "emerging_requirements": ["New requirements to watch"],
+            "emerging_requirements_ko": ["주목할 신규 요구사항 한국어"]
+        }},
+        "benchmarking": {{
+            "industry_average_timeline": "X days",
+            "industry_average_cost": "$X-$Y",
+            "success_rate": "X%",
+            "common_failure_points": ["Failure point 1", "Failure point 2"],
+            "common_failure_points_ko": ["실패 지점1 한국어", "실패 지점2 한국어"]
+        }}
+    }},
+    "risk_scenarios": {{ // 🆕 NEW - Detailed risk scenario planning
+        "worst_case": {{
+            "scenario": "Worst case scenario description",
+            "scenario_ko": "최악 시나리오 한국어",
+            "probability": 0.15,
+            "impact": "high/medium/low",
+            "financial_impact": "$X-$Y",
+            "timeline_impact": "X days delay",
+            "triggers": ["What could trigger this", "Trigger 2"],
+            "triggers_ko": ["발생 계기1 한국어", "발생 계기2 한국어"],
+            "mitigation": "How to prevent or mitigate",
+            "mitigation_ko": "완화 방안 한국어",
+            "recovery_plan": "How to recover if it happens",
+            "recovery_plan_ko": "복구 계획 한국어"
+        }},
+        "best_case": {{
+            "scenario": "Best case scenario description",
+            "scenario_ko": "최선 시나리오 한국어",
+            "probability": 0.70,
+            "impact": "positive",
+            "timeline": "X days",
+            "enablers": ["What enables this", "Enabler 2"],
+            "enablers_ko": ["가능 요인1 한국어", "가능 요인2 한국어"],
+            "how_to_achieve": "Steps to maximize probability",
+            "how_to_achieve_ko": "달성 방법 한국어"
+        }},
+        "most_likely": {{
+            "scenario": "Most likely scenario description",
+            "scenario_ko": "가능성 높은 시나리오 한국어",
+            "probability": 0.60,
+            "timeline": "X days",
+            "cost": "$X-$Y",
+            "key_assumptions": ["Assumption 1", "Assumption 2"],
+            "key_assumptions_ko": ["가정1 한국어", "가정2 한국어"],
+            "variables_to_watch": ["Variable 1", "Variable 2"],
+            "variables_to_watch_ko": ["주목 변수1 한국어", "주목 변수2 한국어"]
+        }}
+    }},
+    "advanced_cost_optimization": {{ // 🆕 NEW - Advanced cost reduction strategies
+        "bulk_strategies": [
+            {{
+                "strategy": "Bulk import/testing strategy",
+                "strategy_ko": "대량 수입/검사 전략 한국어",
+                "minimum_volume": "Minimum volume needed",
+                "savings_potential": "$X per unit or Y% reduction",
+                "savings_potential_ko": "절감 효과 한국어",
+                "requirements": ["What's needed to qualify"],
+                "requirements_ko": ["자격 요건 한국어"],
+                "risks": ["Associated risks"],
+                "risks_ko": ["연관 위험 한국어"]
+            }}
+        ],
+        "timing_strategies": [
+            {{
+                "strategy": "Timing-based cost reduction",
+                "strategy_ko": "타이밍 기반 비용 절감 한국어",
+                "optimal_timing": "Best time to import/test",
+                "optimal_timing_ko": "최적 시기 한국어",
+                "savings_potential": "$X or Y%",
+                "trade_offs": "What you sacrifice",
+                "trade_offs_ko": "대가 한국어"
+            }}
+        ],
+        "process_efficiency": [
+            {{
+                "area": "Process area to optimize",
+                "area_ko": "최적화 영역 한국어",
+                "current_cost": "$X",
+                "optimized_cost": "$Y",
+                "method": "How to achieve optimization",
+                "method_ko": "최적화 방법 한국어",
+                "effort_required": "hours/days",
+                "roi": "Return on investment"
+            }}
+        ],
+        "partnership_opportunities": [
+            {{
+                "partner_type": "Customs broker/Testing lab/etc",
+                "partner_type_ko": "파트너 유형 한국어",
+                "benefit": "Cost/time savings",
+                "benefit_ko": "혜택 한국어",
+                "typical_cost": "$X-$Y",
+                "selection_criteria": ["How to choose partner"],
+                "selection_criteria_ko": ["선택 기준 한국어"]
             }}
         ]
     }}
@@ -524,13 +710,27 @@ DO NOT translate:
 27. **Updates**: Flag recent regulatory changes that may affect compliance
 28. **Dates**: Extract effective_date and last_updated from source data when available
 29. **Recency**: Prioritize more recent regulations and flag outdated information
+30. **🆕 Product Analysis**: Extract ingredient safety status, packaging requirements, preservation needs
+31. **🆕 Market Entry**: Provide phased strategy with success probability and alternative routes
+32. **🆕 Competition**: Analyze market trends, similar products, benchmarking data
+33. **🆕 Scenarios**: Outline worst/best/likely scenarios with probabilities and recovery plans
+34. **🆕 Advanced Optimization**: Include bulk/timing/process/partnership cost-saving strategies
 
 ## Important:
 - If information is missing from sources, indicate "Not found in provided sources"
-- Do not make up URLs - only use URLs from the provided sources
+- **CRITICAL**: Do not make up URLs - only use COMPLETE URLs from the provided sources above
+- **URL VERIFICATION**: Every source_url must be a REAL, COMPLETE URL from the ## Available Sources section
+- **FORBIDDEN URLS**: Never use "ACTUAL_URL", "https://...", or any placeholder
+- **URL LENGTH**: Every source_url must be at least 30 characters long (full URLs only)
 - If multiple sources conflict, note the discrepancy
 - Focus on US import requirements only
 - Prioritize official government sources over general information
+
+## FINAL VALIDATION BEFORE SUBMITTING JSON:
+1. ✅ Check: Does ANY field contain "ACTUAL_URL"? If YES → REJECT and extract real URLs
+2. ✅ Check: Are all source_url fields COMPLETE URLs (not just "https://www.fda.gov/")? If NO → Find specific URLs from sources
+3. ✅ Check: Did you copy URLs EXACTLY from the ## Available Sources section? If NO → Copy them exactly
+4. ✅ Check: Are URLs at least 30+ characters? If NO → Find more specific URLs
 
 ## JSON Formatting Rules (CRITICAL):
 - **Escape Special Characters**: All quotes, newlines, and backslashes in strings MUST be properly escaped
@@ -642,14 +842,14 @@ Return ONLY valid, parseable JSON. No markdown, no comments, no additional text.
             # 토큰 수 추정
             estimated_tokens = len(prompt.split()) * 1.3  # 대략적인 추정
             
-            # GPT 호출
+            # GPT 호출 (JSON 안정성 개선)
             start_time = datetime.now()
             response = await self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
+                temperature=0.05,  # 더 안정적인 JSON 출력을 위해 낮춤 (0.1 → 0.05)
                 response_format={"type": "json_object"},
-                max_tokens=4000  # 확장된 JSON 구조를 위해 증가 (2000 → 4000)
+                max_tokens=8000  # JSON 잘림 방지 (4000 → 8000)
             )
             
             response_time = (datetime.now() - start_time).total_seconds()
@@ -674,7 +874,12 @@ Return ONLY valid, parseable JSON. No markdown, no comments, no additional text.
                     "cost_breakdown": None,
                     "risk_matrix": None,
                     "compliance_score": None,
-                    "market_access": None
+                    "market_access": None,
+                    "product_specific_analysis": None,
+                    "market_entry_strategy": None,
+                    "competitive_landscape": None,
+                    "risk_scenarios": None,
+                    "advanced_cost_optimization": None
                 }
                 for field, default_value in optional_fields.items():
                     if field not in result:

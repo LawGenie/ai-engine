@@ -58,7 +58,8 @@ class RequirementsWorkflow:
         product_name: str, 
         product_description: str = "",
         force_refresh: bool = False,
-        is_new_product: bool = False
+        is_new_product: bool = False,
+        precedent_analysis: Dict[str, Any] = None  # 판례 분석 결과 (최적화)
     ) -> Dict[str, Any]:
         """요구사항 분석 실행 (통합 워크플로우 사용)"""
         
@@ -82,7 +83,8 @@ class RequirementsWorkflow:
                 product_name=product_name,
                 product_description=product_description,
                 force_refresh=force_refresh,
-                is_new_product=is_new_product
+                is_new_product=is_new_product,
+                precedent_analysis=precedent_analysis  # 판례 분석 결과 전달 (최적화)
             )
             
             # 캐시에 저장 (신규 상품이거나 강제 갱신인 경우)

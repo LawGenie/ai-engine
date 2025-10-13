@@ -29,7 +29,7 @@ class HsCodeAgencyMappingService:
         self.backend_api_url = backend_api_url
         self.openai_client = AsyncOpenAI()
         self.memory_cache = {}  # 메모리 캐시
-        self.cache_ttl = 3600  # 1시간
+        self.cache_ttl = 86400 * 30  # 30일 (HS 코드 매핑은 거의 안 바뀜)
         
         # GPT 프롬프트 템플릿
         self.gpt_prompt_template = """

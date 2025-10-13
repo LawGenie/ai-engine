@@ -164,19 +164,31 @@ class TestingProceduresService:
         for r in results:
             url = r.get("url", "")
             title = r.get("title", "")
-            content = (r.get("content", "") or "")
+            content_raw = r.get("content", "")
+            
+            # 🔧 content가 리스트인 경우 문자열로 변환
+            if isinstance(content_raw, list):
+                content = " ".join([str(item) for item in content_raw if item])
+            elif content_raw:
+                content = str(content_raw)
+            else:
+                content = ""
+            
             score = r.get("score", 0)
             agency = self._infer_agency(url)
             lower = content.lower()
+            
+            # snippet은 항상 문자열로 저장
+            snippet = content[:300] if content else ""
 
             if any(k in lower for k in ["every import", "per shipment", "per import", "annual", "yearly", "sampling", "random sample", "periodic"]):
-                data["cycles"].append({"snippet": content[:300], "title": title, "url": url, "agency": agency, "score": score})
+                data["cycles"].append({"snippet": snippet, "title": title, "url": url, "agency": agency, "score": score})
             if any(k in lower for k in ["inspection", "visual", "physical", "chemical", "analysis", "laboratory", "lab test", "testing method"]):
-                data["methods"].append({"snippet": content[:300], "title": title, "url": url, "agency": agency, "score": score})
+                data["methods"].append({"snippet": snippet, "title": title, "url": url, "agency": agency, "score": score})
             if any(k in lower for k in ["fee", "cost", "charge", "payment", "$", "usd"]):
-                data["costs"].append({"snippet": content[:300], "title": title, "url": url, "agency": agency, "score": score})
+                data["costs"].append({"snippet": snippet, "title": title, "url": url, "agency": agency, "score": score})
             if any(k in lower for k in ["within", "days", "weeks", "processing time", "turnaround", "timeline"]):
-                data["durations"].append({"snippet": content[:300], "title": title, "url": url, "agency": agency, "score": score})
+                data["durations"].append({"snippet": snippet, "title": title, "url": url, "agency": agency, "score": score})
 
             if agency and agency not in data["agencies"]:
                 data["agencies"].append(agency)
@@ -196,14 +208,8 @@ class TestingProceduresService:
 
         cost_band = "unknown"
         if extracted["costs"]:
-            # 안전한 문자열 추출
-            text_parts = []
-            for i in extracted["costs"]:
-                if isinstance(i, dict) and "snippet" in i:
-                    text_parts.append(i["snippet"].lower())
-                elif isinstance(i, str):
-                    text_parts.append(i.lower())
-            text = " ".join(text_parts)
+            # snippet은 이제 항상 문자열이므로 간단하게 처리
+            text = " ".join([i.get("snippet", "").lower() for i in extracted["costs"] if isinstance(i, dict)])
             if any(k in text for k in ["$50", "$100", "fee"]):
                 cost_band = "low"
             if any(k in text for k in ["$500", "$1,000", "laboratory"]):
@@ -213,14 +219,8 @@ class TestingProceduresService:
 
         duration_band = "unknown"
         if extracted["durations"]:
-            # 안전한 문자열 추출
-            text_parts = []
-            for i in extracted["durations"]:
-                if isinstance(i, dict) and "snippet" in i:
-                    text_parts.append(i["snippet"].lower())
-                elif isinstance(i, str):
-                    text_parts.append(i.lower())
-            text = " ".join(text_parts)
+            # snippet은 이제 항상 문자열이므로 간단하게 처리
+            text = " ".join([i.get("snippet", "").lower() for i in extracted["durations"] if isinstance(i, dict)])
             if any(k in text for k in ["1-3 days", "2 days", "48 hours", "72 hours"]):
                 duration_band = "short"
             if any(k in text for k in ["1-2 weeks", "5-10 business days"]):
@@ -240,7 +240,7 @@ class TestingProceduresService:
         aggregate_results: List[Dict[str, Any]] = []
         for _, q in queries.items():
             try:
-                res = await self.tavily.search(q, max_results=10)  # 통합 쿼리이므로 결과 증가
+                res = await self.tavily.search(q, max_results=20)  # 증가: 검색 횟수 감소, 더 많은 출처 확보
                 aggregate_results.extend(res)
             except Exception:
                 continue
@@ -250,14 +250,8 @@ class TestingProceduresService:
 
         cycle_label = "unknown"
         if extracted["cycles"]:
-            # 안전한 문자열 추출
-            text_parts = []
-            for i in extracted["cycles"]:
-                if isinstance(i, dict) and "snippet" in i:
-                    text_parts.append(i["snippet"].lower())
-                elif isinstance(i, str):
-                    text_parts.append(i.lower())
-            joined_cycles = " ".join(text_parts)
+            # snippet은 이제 항상 문자열이므로 간단하게 처리
+            joined_cycles = " ".join([i.get("snippet", "").lower() for i in extracted["cycles"] if isinstance(i, dict)])
             if any(k in joined_cycles for k in ["every import", "per shipment", "per import"]):
                 cycle_label = "per_import"
             elif any(k in joined_cycles for k in ["annual", "yearly"]):
@@ -268,18 +262,14 @@ class TestingProceduresService:
         methods_label = []
         if extracted["methods"]:
             for m in extracted["methods"]:
-                if isinstance(m, dict) and "snippet" in m:
-                    snippet = m["snippet"].lower()
-                    if any(k in snippet for k in ["chemical", "analysis", "lab"]) and "chemical" not in methods_label:
-                        methods_label.append("chemical")
-                    if any(k in snippet for k in ["visual", "physical", "inspection"]) and "physical" not in methods_label:
-                        methods_label.append("physical")
-                elif isinstance(m, str):
-                    snippet = m.lower()
-                    if any(k in snippet for k in ["chemical", "analysis", "lab"]) and "chemical" not in methods_label:
-                        methods_label.append("chemical")
-                    if any(k in snippet for k in ["visual", "physical", "inspection"]) and "physical" not in methods_label:
-                        methods_label.append("physical")
+                if isinstance(m, dict):
+                    snippet_text = m.get("snippet", "").lower()
+                    # 키워드 매칭
+                    if snippet_text:
+                        if any(k in snippet_text for k in ["chemical", "analysis", "lab"]) and "chemical" not in methods_label:
+                            methods_label.append("chemical")
+                        if any(k in snippet_text for k in ["visual", "physical", "inspection"]) and "physical" not in methods_label:
+                            methods_label.append("physical")
 
         return {
             "hs_code": hs_code,
