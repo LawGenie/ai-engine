@@ -45,7 +45,7 @@ from app.routers.product_registration_router import router as product_registrati
 from app.routers.keyword_extraction_router import router as keyword_extraction_router
 from app.routers.tax_router import router as tax_router
 from app.routers.precedents_router import router as precedents_router
-from app.routers.hs_tariff_router import router as hs_tariff_router
+from app.routers.hs_tariff_router import router as hs_tariff_router, api_router as hs_api_router
 from app.schemas.common import HealthResponse
 from datetime import datetime
 import asyncio
@@ -120,6 +120,7 @@ app.include_router(keyword_extraction_router)
 app.include_router(tax_router)
 app.include_router(precedents_router)  # 판례 분석 라우터
 app.include_router(hs_tariff_router)   # HS Code & Tariff 분석 라우터
+app.include_router(hs_api_router)      # Backend API 호환 엔드포인트
 
 @app.get("/")
 async def root():
