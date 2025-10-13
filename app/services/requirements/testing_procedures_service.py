@@ -131,7 +131,8 @@ class TestingProceduresService:
             # 기관별 쿼리를 하나로 통합
             for agency, agency_queries in mapping.get("specific_queries", {}).items():
                 # 모든 agency_queries를 하나의 통합 쿼리로
-                combined_keywords = " ".join([q.replace(f"{agency} ", "").split()[0:3] for q in agency_queries[:2]])
+                # 각 쿼리에서 처음 3개 단어를 추출한 후 문자열로 조합
+                combined_keywords = " ".join([" ".join(q.replace(f"{agency} ", "").split()[0:3]) for q in agency_queries[:2]])
                 queries[f"{agency}_integrated"] = f"site:{agency.lower()}.gov {combined_keywords} {product_name} {hs_code}"
             
             # testing_focus도 하나로 통합

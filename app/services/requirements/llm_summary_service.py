@@ -62,19 +62,26 @@ Provide a comprehensive, actionable analysis in JSON format.
 
 **🚨🚨🚨 CRITICAL - SOURCE URL REQUIREMENTS 🚨🚨🚨**:
 1. **ABSOLUTELY FORBIDDEN**: Using "ACTUAL_URL_FROM_SOURCES_ABOVE" or "https://..." as placeholder
-2. **MANDATORY**: Extract COMPLETE, FULL URLs from the ## Available Sources section above
-3. **EXAMPLE OF CORRECT URL**: "https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics"
-4. **EXAMPLE OF WRONG URL**: "https://www.fda.gov/cosmetics" or "ACTUAL_URL_FROM_SOURCES_ABOVE" 
-5. Match each requirement/document to its MOST SPECIFIC source URL from the list above
-6. If you cannot find a specific matching URL in the sources, use the agency's DETAILED regulation page:
+2. **MANDATORY**: Copy EXACT, COMPLETE URLs from the ## Available Sources section below (including ALL query parameters)
+3. **QUERY PARAMETERS**: If a URL contains "?query=..." or other parameters, you MUST include them fully
+   - ✅ CORRECT: "https://www.fda.gov/food/food-facility-registration?region=international&category=cosmetics"
+   - ❌ WRONG: "https://www.fda.gov/food/food-facility-registration" (missing query params)
+4. **EXAMPLE OF CORRECT URL**: "https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics"
+5. **EXAMPLE OF WRONG URL**: "https://www.fda.gov/cosmetics" or "ACTUAL_URL_FROM_SOURCES_ABOVE" 
+6. **URL MATCHING**: For each requirement, find the MOST SPECIFIC and COMPLETE URL from sources below that directly relates to that requirement
+7. **FALLBACK URLs** (use ONLY if no specific URL found in sources):
    - FDA cosmetics: https://www.fda.gov/cosmetics/cosmetics-laws-regulations
    - FDA food: https://www.fda.gov/food/guidance-regulation-food-and-dietary-supplements
    - USDA: https://www.usda.gov/topics/trade
    - EPA: https://www.epa.gov/regulatory-information-topic
    - CPSC: https://www.cpsc.gov/Regulations-Laws--Standards
    - CBP: https://www.cbp.gov/trade/basic-import-export
-7. **VALIDATION**: Every "source_url" field MUST be a COMPLETE HTTP/HTTPS URL (minimum 30 characters)
-8. **VERIFICATION**: Before finalizing, check that NO field contains "ACTUAL_URL" or placeholder text
+8. **VALIDATION**: Every "source_url" field MUST be:
+   - A COMPLETE HTTP/HTTPS URL (minimum 35 characters)
+   - Copied EXACTLY from sources (character-by-character, including all params)
+   - A working, accessible URL (avoid broken paths like /food/food-facility-registration without proper context)
+9. **VERIFICATION**: Before finalizing, check that NO field contains "ACTUAL_URL", "https://...", or incomplete URLs
+10. **DOUBLE-CHECK**: Verify each URL ends properly (not cut off mid-path) and includes full domain + path + params
 
 ## Response Format (JSON with Bilingual Support):
 **CRITICAL INSTRUCTIONS**: 
@@ -139,7 +146,7 @@ DO NOT translate:
             "requirement": "Specific requirement description",
             "requirement_ko": "요구사항 한국어 설명",
             "agency": "FDA/USDA/EPA/etc",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "severity": "mandatory/recommended",
             "penalty_if_violated": "Brief description of consequences",
             "penalty_if_violated_ko": "위반 시 처벌 한국어 설명",
@@ -153,7 +160,7 @@ DO NOT translate:
             "document_ko": "문서명 한국어",
             "issuing_authority": "Who issues this",
             "issuing_authority_ko": "발급 기관 한국어",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "estimated_time": "Processing time",
             "estimated_time_ko": "소요 시간 한국어",
             "notes": "Important details",
@@ -167,16 +174,16 @@ DO NOT translate:
             "action_ko": "조치 사항 한국어",
             "responsible_party": "Who should do this",
             "responsible_party_ko": "담당자 한국어",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "estimated_duration": "Time needed",
             "estimated_duration_ko": "소요 시간 한국어",
             "dependencies": ["Previous steps if any"]
         }}
     ],
     "estimated_costs": {{ // ⚠️ REQUIRED - Calculate based on actual requirements
-        "certification": {{"min": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "max": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "currency": "USD", "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - e.g., https://www.fda.gov/industry/registration-food-facilities]", "reasoning": "Based on X certifications required"}},
-        "testing": {{"min": [CALCULATE_BASED_ON_TEST_COUNT], "max": [CALCULATE_BASED_ON_TEST_COUNT], "currency": "USD", "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - e.g., https://www.fda.gov/cosmetics/cosmetics-science-research/product-testing-cosmetics]", "reasoning": "Based on Y tests needed"}},
-        "legal_review": {{"min": [CALCULATE_BASED_ON_COMPLEXITY], "max": [CALCULATE_BASED_ON_COMPLEXITY], "currency": "USD", "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - e.g., https://www.fda.gov/about-fda/contact-fda]", "reasoning": "Based on regulatory complexity"}},
+        "certification": {{"min": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "max": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "currency": "USD", "source_url": "[COPY_EXACT_URL_FROM_SOURCES_WITH_ALL_PARAMS - e.g., https://www.fda.gov/industry/registration-food-facilities]", "reasoning": "Based on X certifications required"}},
+            "testing": {{"min": [CALCULATE_BASED_ON_TEST_COUNT], "max": [CALCULATE_BASED_ON_TEST_COUNT], "currency": "USD", "source_url": "[COPY_EXACT_URL_FROM_SOURCES_WITH_ALL_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-science-research/product-testing-cosmetics]", "reasoning": "Based on Y tests needed"}},
+        "legal_review": {{"min": [CALCULATE_BASED_ON_COMPLEXITY], "max": [CALCULATE_BASED_ON_COMPLEXITY], "currency": "USD", "source_url": "[COPY_EXACT_URL_FROM_SOURCES_WITH_ALL_PARAMS - e.g., https://www.fda.gov/about-fda/contact-fda]", "reasoning": "Based on regulatory complexity"}},
         "total": {{"min": [SUM_OF_MINIMUMS], "max": [SUM_OF_MAXIMUMS], "currency": "USD"}},
         "notes": "Estimates based on [SPECIFY_BASIS: e.g., typical FDA cosmetic import, FDA food facility, etc.]"
     }},
@@ -185,7 +192,7 @@ DO NOT translate:
         "typical_days": [AVERAGE_SCENARIO_BASED_ON_REQUIREMENTS],
         "maximum_days": [WORST_CASE_BASED_ON_REQUIREMENTS],
         "critical_path": ["ACTUAL step 1 from requirements", "ACTUAL step 2", "etc"],
-        "source_url": "[EXTRACT_COMPLETE_URL_FROM_SOURCES - Must be full URL from sources above]",
+        "source_url": "[COPY_EXACT_URL_FROM_SOURCES_WITH_ALL_PARAMS - Must be complete URL with all query parameters]",
         "reasoning": "Timeline based on [SPECIFY: e.g., FDA review + testing + documentation prep]"
     }},
     "risk_factors": [
@@ -214,7 +221,7 @@ DO NOT translate:
             "element": "Ingredient list/Country of origin/etc",
             "requirement": "Specific requirement",
             "agency": "FDA/FTC/etc",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "format": "Required format",
             "placement": "Where on package",
             "language": "English/Bilingual",
@@ -227,7 +234,7 @@ DO NOT translate:
             "status": "prohibited/restricted",
             "max_concentration": "If restricted",
             "agency": "Regulating agency",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "alternatives": ["Safe alternatives if available"]
         }}
     ],
@@ -237,7 +244,7 @@ DO NOT translate:
             "required_for": "Product categories",
             "deadline": "When to submit",
             "submission_method": "How to submit",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "processing_time": "Expected time",
             "consequences_if_missed": "What happens"
         }}
@@ -250,7 +257,7 @@ DO NOT translate:
             "accredited_labs": ["Lab names"],
             "cost_per_test": {{"min": [ACTUAL_COST_MIN], "max": [ACTUAL_COST_MAX], "currency": "USD", "reasoning": "Based on test type complexity"}},
             "turnaround_time": "Days",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "pass_criteria": "Acceptance criteria"
         }}
     ],
@@ -262,7 +269,7 @@ DO NOT translate:
             "cost_range": {{"min": [ACTUAL_CERT_COST_MIN], "max": [ACTUAL_CERT_COST_MAX], "currency": "USD", "reasoning": "Based on certification scope"}},
             "validity": "Duration",
             "recognized_bodies": ["Certifying organizations"],
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "market_advantage": "Business benefit"
         }}
     ],
@@ -277,7 +284,7 @@ DO NOT translate:
             "limitations_ko": "면제되지 않는 사항 한국어",
             "how_to_claim": "Documentation or process needed",
             "how_to_claim_ko": "신청 방법 한국어",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "notes": "Important caveats",
             "notes_ko": "주의사항 한국어"
         }}
@@ -300,7 +307,7 @@ DO NOT translate:
             "state": "California/New York/etc",
             "requirement": "Specific state requirement",
             "applies_to": "Product categories",
-            "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
+            "source_url": "[COPY_EXACT_COMPLETE_URL_FROM_SOURCES_ABOVE_INCLUDING_QUERY_PARAMS - e.g., https://www.fda.gov/cosmetics/cosmetics-laws-regulations/prohibited-restricted-ingredients-cosmetics]",
             "penalty": "State-level penalties"
         }}
     ],
@@ -347,7 +354,7 @@ DO NOT translate:
                 "dependencies": ["Prerequisite tasks"],
                 "success_criteria": "How to verify completion",
                 "success_criteria_ko": "완료 확인 방법 한국어",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ],
         "during_import": [
@@ -357,7 +364,7 @@ DO NOT translate:
                 "timing": "When during import",
                 "timing_ko": "수입 중 시점 한국어",
                 "estimated_hours": 4,
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ],
         "post_import": [
@@ -366,7 +373,7 @@ DO NOT translate:
                 "task_ko": "수입 후 준수 작업 한국어",
                 "deadline": "When to complete",
                 "estimated_hours": 1,
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ]
     }},
@@ -392,7 +399,7 @@ DO NOT translate:
                 "potential_savings_ko": "절약 금액 한국어",
                 "trade_offs": "What you give up",
                 "trade_offs_ko": "대가 한국어",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ]
     }},
@@ -407,7 +414,7 @@ DO NOT translate:
                 "detection_method_ko": "조기 감지 방법 한국어",
                 "contingency_plan": "What to do if it happens",
                 "contingency_plan_ko": "발생시 대응 방안 한국어",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ],
         "medium_risk": [
@@ -418,7 +425,7 @@ DO NOT translate:
                 "impact": "medium",
                 "monitoring_frequency": "How often to check",
                 "monitoring_frequency_ko": "확인 주기 한국어",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ]
     }},
@@ -466,7 +473,7 @@ DO NOT translate:
                 "action_plan_ko": "개선 방안 한국어",
                 "priority": "high/medium/low",
                 "estimated_effort": "hours/days/weeks",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ]
     }},
@@ -480,7 +487,7 @@ DO NOT translate:
                 "certifications_needed_ko": ["추가 인증 한국어"],
                 "compliance_deadline": "When to comply",
                 "compliance_deadline_ko": "준수 시한 한국어",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ],
         "state_regulations": [
@@ -492,7 +499,7 @@ DO NOT translate:
                 "applies_to_ko": "적용 상품 카테고리 한국어",
                 "penalty": "State-level penalty",
                 "penalty_ko": "주별 처벌 한국어",
-                "source_url": "[EXTRACT_FULL_URL_FROM_SOURCES_ABOVE - Must be complete URL like: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/...]"
+                "source_url": "[COPY_EXACT_URL_WITH_QUERY_PARAMS - Must be complete URL from sources including all ?param=value parts]"
             }}
         ]
     }},
@@ -720,17 +727,22 @@ DO NOT translate:
 - If information is missing from sources, indicate "Not found in provided sources"
 - **CRITICAL**: Do not make up URLs - only use COMPLETE URLs from the provided sources above
 - **URL VERIFICATION**: Every source_url must be a REAL, COMPLETE URL from the ## Available Sources section
-- **FORBIDDEN URLS**: Never use "ACTUAL_URL", "https://...", or any placeholder
-- **URL LENGTH**: Every source_url must be at least 30 characters long (full URLs only)
+- **FORBIDDEN URLS**: Never use "ACTUAL_URL", "https://...", or any placeholder text
+- **URL LENGTH**: Every source_url must be at least 35 characters long (full URLs only)
+- **QUERY PARAMS**: If source URL has query parameters (?key=value), include them ALL
+- **EXACT COPY**: Copy URLs character-by-character from sources (do not modify or shorten)
 - If multiple sources conflict, note the discrepancy
 - Focus on US import requirements only
 - Prioritize official government sources over general information
 
-## FINAL VALIDATION BEFORE SUBMITTING JSON:
-1. ✅ Check: Does ANY field contain "ACTUAL_URL"? If YES → REJECT and extract real URLs
-2. ✅ Check: Are all source_url fields COMPLETE URLs (not just "https://www.fda.gov/")? If NO → Find specific URLs from sources
-3. ✅ Check: Did you copy URLs EXACTLY from the ## Available Sources section? If NO → Copy them exactly
-4. ✅ Check: Are URLs at least 30+ characters? If NO → Find more specific URLs
+## FINAL VALIDATION BEFORE SUBMITTING JSON (MANDATORY):
+1. ✅ Check: Does ANY field contain "ACTUAL_URL" or placeholder text? If YES → REJECT and extract real URLs from sources
+2. ✅ Check: Are all source_url fields COMPLETE URLs with full path? (not just "https://www.fda.gov/")? If NO → Find specific URLs from sources
+3. ✅ Check: Did you copy URLs EXACTLY character-by-character from the ## Available Sources section? If NO → Copy them exactly
+4. ✅ Check: Are URLs at least 35+ characters? If NO → Find more specific URLs from sources
+5. ✅ Check: Do URLs include query parameters if present in sources (e.g., ?region=...&category=...)? If NO → Add them
+6. ✅ Check: Are URLs complete and not cut off mid-path? If NO → Use full URL from sources
+7. ✅ FINAL: Open a random sample source_url in your mind - does it look like a working, specific page? If NO → Fix it
 
 ## JSON Formatting Rules (CRITICAL):
 - **Escape Special Characters**: All quotes, newlines, and backslashes in strings MUST be properly escaped
@@ -799,27 +811,46 @@ Return ONLY valid, parseable JSON. No markdown, no comments, no additional text.
         return result
     
     def _extract_document_texts(self, raw_documents: List[Dict[str, Any]]) -> List[str]:
-        """문서에서 텍스트 추출"""
-        texts = []
+        """문서에서 텍스트 및 URL 정보 추출 (LLM에 전달용)"""
+        formatted_docs = []
         
-        for doc in raw_documents:
-            # 다양한 필드에서 텍스트 추출
-            text_fields = ["content", "summary", "description", "text", "body"]
+        for idx, doc in enumerate(raw_documents, 1):
+            # URL 추출 (쿼리 파라미터 포함 전체 URL)
+            url = doc.get("url", "") or doc.get("source_url", "") or doc.get("link", "")
             
+            # 제목 추출
+            title = doc.get("title", "") or doc.get("name", "") or f"Document {idx}"
+            
+            # 본문 추출
+            text_fields = ["content", "summary", "description", "text", "body", "snippet"]
+            content = ""
             for field in text_fields:
                 if field in doc and doc[field]:
-                    text = str(doc[field])
-                    if len(text) > 50:  # 의미있는 길이의 텍스트만
-                        texts.append(text[:2000])  # 최대 2000자로 제한
+                    content = str(doc[field])
+                    if len(content) > 50:  # 의미있는 길이의 텍스트만
+                        content = content[:1500]  # 최대 1500자로 제한 (URL 정보 공간 확보)
                         break
             
-            # 제목도 포함
-            if "title" in doc and doc["title"]:
-                texts.append(f"제목: {doc['title']}")
+            # 포맷팅: URL과 내용을 명확하게 구분
+            if url and content:
+                formatted_doc = f"""
+📄 Source {idx}:
+   Title: {title}
+   URL: {url}
+   Content: {content}
+"""
+                formatted_docs.append(formatted_doc)
+            elif url:
+                # URL만 있는 경우
+                formatted_doc = f"""
+📄 Source {idx}:
+   Title: {title}
+   URL: {url}
+"""
+                formatted_docs.append(formatted_doc)
         
-        # 중복 제거 및 길이 제한
-        unique_texts = list(set(texts))
-        return unique_texts[:10]  # 최대 10개 문서만 처리
+        # 최대 15개 문서 처리 (URL 정보 포함으로 더 많은 정보)
+        return formatted_docs[:15]
     
     async def _call_gpt_summary(
         self, 
