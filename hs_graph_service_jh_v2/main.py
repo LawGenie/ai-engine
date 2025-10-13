@@ -69,6 +69,26 @@ async def analyze_hs_code_graph(request: HsCodeAnalysisRequest):
         raise HTTPException(status_code=500, detail=f"분석 중 오류가 발생했습니다: {str(e)}")
 
 if __name__ == "__main__":
+    print("=" * 80)
+    print("⚠️ 주의: 이 파일은 더 이상 직접 실행할 필요가 없습니다!")
+    print("=" * 80)
+    print("")
+    print("📌 HS Code & Tariff 분석 기능이 메인 AI Engine에 통합되었습니다.")
+    print("")
+    print("✅ 올바른 실행 방법:")
+    print("   cd ai-engine")
+    print("   python -m uvicorn main:app --reload --port 8000")
+    print("")
+    print("✅ 사용 가능한 엔드포인트:")
+    print("   POST http://localhost:8000/hs-tariff/analyze")
+    print("   GET  http://localhost:8000/hs-tariff/health")
+    print("   GET  http://localhost:8000/hs-tariff/test")
+    print("")
+    print("📖 자세한 내용: ai-engine/PRECEDENTS_INTEGRATION.md")
+    print("=" * 80)
+    print("")
+    print("🚀 테스트 목적으로 이 서버를 단독 실행하시겠습니까?")
+    
     import uvicorn
     uvicorn.run(
         app, 

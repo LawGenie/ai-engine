@@ -104,7 +104,9 @@ class VectorService:
     def _load_hts_data(self):
         """✅ HTS 데이터 단일 소스 로드"""
         try:
-            data_path = Path("./data/hts_complete_data.json")
+            # 현재 파일의 위치를 기준으로 data 폴더 경로 계산
+            current_dir = Path(__file__).parent
+            data_path = current_dir / "data" / "hts_complete_data.json"
             with open(data_path, 'r', encoding='utf-8') as f:
                 all_records = json.load(f)
             

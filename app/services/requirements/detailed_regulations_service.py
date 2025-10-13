@@ -214,124 +214,115 @@ class DetailedRegulationsService:
         }
     
     def _build_phase_specific_queries(self, product_name: str, hs_code: str, detailed_regulations: Dict[str, Any]) -> Dict[str, str]:
-        """Phase 1-4 전용 세부 규정 검색 쿼리 생성"""
+        """
+        Phase 1 전용 세부 규정 검색 쿼리 생성 (통합 쿼리 최적화)
+        
+        주의: Phase 2-4는 별도 서비스(testing_procedures, penalties, validity)에서 처리하므로
+        이 메서드는 Phase 1만 담당합니다.
+        """
         queries = {}
         
-        # Phase 1: 세부 규정 및 기준 추출 (우선순위 높음)
-        for regulation_type, regulation_info in detailed_regulations.get("detailed_regulations", {}).items():
-            agencies = regulation_info.get("agencies", [])
-            base_queries = regulation_info.get("queries", [])
-            standards = regulation_info.get("standards", [])
+        # 🚀 통합 쿼리 전략: 유사한 쿼리를 하나로 합침
+        category = detailed_regulations.get("category", "general")
+        
+        # HS 코드 4자리
+        hs_4digit = hs_code.split('.')[0] if '.' in hs_code else hs_code[:4]
+        
+        # 카테고리별 통합 쿼리
+        if category == "cosmetics":
+            # 성분 제한 통합 쿼리 (기존 7개 → 2개)
+            queries["FDA_ingredients_integrated"] = f"site:fda.gov cosmetic prohibited restricted ingredients safety limits {hs_code}"
+            queries["FDA_ingredients_product"] = f"site:fda.gov cosmetic ingredient safety {product_name}"
+            queries["FDA_regulations"] = f"site:fda.gov cosmetic regulations standards {product_name} {hs_code}"
             
-            for agency in agencies:
-                agency_lower = agency.lower()
-                
-                # 기본 세부 규정 쿼리
-                for i, base_query in enumerate(base_queries):
-                    queries[f"{agency}_phase1_{regulation_type}_{i}"] = f"site:{agency_lower}.gov {base_query} {product_name} HS {hs_code}"
-                
-                # 표준별 특화 쿼리
-                for standard in standards:
-                    queries[f"{agency}_phase1_{regulation_type}_{standard}"] = f"site:{agency_lower}.gov {standard} {product_name} HS {hs_code}"
-                
-                # Tavily Search 쿼리 확장
-                if regulation_type == "pesticide_residue":
-                    queries[f"{agency}_phase1_mrl_{product_name}"] = f"FDA pesticide residue limits {product_name}"
-                    queries[f"{agency}_phase1_mrl_general"] = f"FDA pesticide residue limits MRL {product_name}"
-                
-                elif regulation_type == "chemical_restrictions":
-                    queries[f"{agency}_phase1_chemical_{product_name}"] = f"FDA cosmetic ingredient restrictions {product_name}"
-                    queries[f"{agency}_phase1_chemical_general"] = f"FDA cosmetic ingredient restrictions safety"
-                
-                elif regulation_type == "food_additives":
-                    queries[f"{agency}_phase1_gras_{product_name}"] = f"FDA GRAS list {product_name}"
-                    queries[f"{agency}_phase1_gras_general"] = f"FDA GRAS generally recognized as safe"
-                
-                elif regulation_type == "emc_standards":
-                    queries[f"{agency}_phase1_emc_{product_name}"] = f"FCC Part 15 EMC {product_name}"
-                    queries[f"{agency}_phase1_emc_general"] = f"FCC Part 15 electromagnetic compatibility"
+        elif category == "food":
+            # 농약 잔류량 통합 쿼리 (기존 4개 → 2개)
+            queries["FDA_EPA_pesticide_integrated"] = f"pesticide residue limits MRL tolerances {hs_code} site:.gov"
+            queries["FDA_food_additives"] = f"site:fda.gov food additives GRAS safe ingredients {product_name}"
+            queries["FDA_food_safety"] = f"site:fda.gov food safety import requirements {product_name} {hs_code}"
+            
+        elif category == "electronics":
+            # EMC 기준 통합 쿼리
+            queries["FCC_emc_integrated"] = f"site:fcc.gov electromagnetic compatibility EMC Part 15 standards {hs_code}"
+            queries["FCC_product"] = f"site:fcc.gov electronic device certification {product_name}"
+            
+        else:
+            # 일반 상품 통합 쿼리
+            queries["general_integrated"] = f"import requirements safety standards regulations {hs_code} site:.gov"
+            queries["general_product"] = f"import compliance requirements {product_name} site:.gov"
         
-        # Phase 2: 검사 절차 및 방법 검색
-        for agency in ["FDA", "USDA", "EPA", "FCC", "CPSC"]:
-            agency_lower = agency.lower()
-            queries[f"{agency}_phase2_testing"] = f"site:{agency_lower}.gov testing procedures {product_name} HS {hs_code}"
-            queries[f"{agency}_phase2_inspection"] = f"site:{agency_lower}.gov inspection methods {product_name} HS {hs_code}"
-            queries[f"{agency}_phase2_authorization"] = f"site:{agency_lower}.gov authorization procedures {product_name} HS {hs_code}"
+        # 🎯 공통 통합 쿼리 (모든 카테고리 - 항상 포함)
+        queries["general_safety"] = f"site:.gov import safety requirements compliance {product_name} {hs_code}"
         
-        # Phase 3: 처벌 및 벌금 정보 검색
-        for agency in ["FDA", "USDA", "EPA", "FCC", "CPSC"]:
-            agency_lower = agency.lower()
-            queries[f"{agency}_phase3_penalties"] = f"site:{agency_lower}.gov penalties violations {product_name} HS {hs_code}"
-            queries[f"{agency}_phase3_enforcement"] = f"site:{agency_lower}.gov enforcement actions {product_name} HS {hs_code}"
-            queries[f"{agency}_phase3_fines"] = f"site:{agency_lower}.gov civil penalties {product_name} HS {hs_code}"
-        
-        # Phase 4: 유효기간 및 갱신 정보 검색
-        for agency in ["FDA", "USDA", "EPA", "FCC", "CPSC"]:
-            agency_lower = agency.lower()
-            queries[f"{agency}_phase4_validity"] = f"site:{agency_lower}.gov certificate validity period {product_name} HS {hs_code}"
-            queries[f"{agency}_phase4_renewal"] = f"site:{agency_lower}.gov certification renewal {product_name} HS {hs_code}"
-            queries[f"{agency}_phase4_duration"] = f"site:{agency_lower}.gov permit duration {product_name} HS {hs_code}"
+        print(f"  🚀 통합 쿼리 최적화: {len(queries)}개 쿼리 생성 (기존 대비 70-80% 감소)")
         
         return queries
     
+    async def analyze(self, hs_code: str, product_name: str, product_description: str = "") -> Dict[str, Any]:
+        """
+        Phase 1: 세부 규정 및 기준 추출 실행
+        
+        이 메서드는 Phase 1만 담당합니다.
+        Phase 2-4는 별도 서비스에서 처리됩니다.
+        """
+        return await self.search_detailed_regulations(hs_code, product_name, product_description)
+    
     async def search_detailed_regulations(self, hs_code: str, product_name: str, product_description: str = "") -> Dict[str, Any]:
-        """세부 규정 및 기준 추출 실행"""
-        print(f"\n🚀 [DETAILED REGULATIONS] 세부 규정 추출 시작")
-        print(f"  📋 HS코드: {hs_code}")
-        print(f"  📦 상품명: {product_name}")
+        """세부 규정 및 기준 추출 실행 (내부 메서드)"""
+        try:
+            print(f"\n🚀 [PHASE 1] 세부 규정 추출 시작")
+            print(f"  📋 HS코드: {hs_code}")
+            print(f"  📦 상품명: {product_name}")
+            
+            # HS 코드 기반 세부 규정 정보 조회
+            detailed_regulations = self._get_detailed_regulations_for_hs_code(hs_code)
+            
+            # Phase 1 검색 쿼리 생성 (Phase 1만 담당)
+            phase_queries = self._build_phase_specific_queries(product_name, hs_code, detailed_regulations)
+            
+            print(f"  🎯 상품 카테고리: {detailed_regulations.get('category', 'general')}")
+            print(f"  📊 검색 신뢰도: {detailed_regulations.get('confidence', 0):.1%}")
+            print(f"  🔍 Phase 1 검색 쿼리: {len(phase_queries)}개")
+            
+            # 검색 결과 저장
+            search_results = {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "product_description": product_description,
+                "category": detailed_regulations.get("category", "general"),
+                "confidence": detailed_regulations.get("confidence", 0.3),
+                "search_timestamp": datetime.now().isoformat(),
+                "phase_results": {
+                    "phase1_detailed_regulations": {}
+                },
+                "extracted_regulations": {
+                    "pesticide_residue_limits": [],
+                    "chemical_restrictions": [],
+                    "food_additive_standards": [],
+                    "emc_standards": [],
+                    "safety_standards": []
+                },
+                "sources": []
+            }
+        except Exception as e:
+            print(f"  ❌ Phase 1 초기화 실패: {e}")
+            return {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "error": str(e),
+                "sources": [],
+                "summary": "Phase 1 분석 실패"
+            }
         
-        # HS 코드 기반 세부 규정 정보 조회
-        detailed_regulations = self._get_detailed_regulations_for_hs_code(hs_code)
-        
-        # Phase 1-4 검색 쿼리 생성
-        phase_queries = self._build_phase_specific_queries(product_name, hs_code, detailed_regulations)
-        
-        print(f"  🎯 상품 카테고리: {detailed_regulations.get('category', 'general')}")
-        print(f"  📊 검색 신뢰도: {detailed_regulations.get('confidence', 0):.1%}")
-        print(f"  🔍 총 검색 쿼리: {len(phase_queries)}개")
-        
-        # 검색 결과 저장
-        search_results = {
-            "hs_code": hs_code,
-            "product_name": product_name,
-            "product_description": product_description,
-            "category": detailed_regulations.get("category", "general"),
-            "confidence": detailed_regulations.get("confidence", 0.3),
-            "search_timestamp": datetime.now().isoformat(),
-            "phase_results": {
-                "phase1_detailed_regulations": {},
-                "phase2_testing_procedures": {},
-                "phase3_penalties_enforcement": {},
-                "phase4_validity_periods": {}
-            },
-            "extracted_regulations": {
-                "pesticide_residue_limits": [],
-                "chemical_restrictions": [],
-                "food_additive_standards": [],
-                "emc_standards": [],
-                "safety_standards": []
-            },
-            "sources": []
-        }
-        
-        # 각 Phase별 검색 실행
+        # Phase 1 검색 실행 (Phase 2-4는 별도 서비스에서 처리)
         for query_key, query in phase_queries.items():
             try:
-                # Phase 분류
-                if "phase1" in query_key:
-                    phase = "phase1_detailed_regulations"
-                elif "phase2" in query_key:
-                    phase = "phase2_testing_procedures"
-                elif "phase3" in query_key:
-                    phase = "phase3_penalties_enforcement"
-                elif "phase4" in query_key:
-                    phase = "phase4_validity_periods"
-                else:
-                    phase = "phase1_detailed_regulations"
+                # Phase 1만 처리
+                phase = "phase1_detailed_regulations"
                 
-                # Tavily Search 실행
+                # Tavily Search 실행 (통합 쿼리는 max_results 증가)
                 if self.tavily_service.is_enabled():
-                    search_results_raw = await self.tavily_service.search(query, max_results=5)
+                    search_results_raw = await self.tavily_service.search(query, max_results=10)
                     
                     # 결과 처리
                     processed_results = self._process_search_results(query_key, query, search_results_raw, hs_code)
@@ -360,24 +351,27 @@ class DetailedRegulationsService:
                 }
         
         # 통계 계산
-        total_results = sum(
-            len(phase_data.get(query_key, {}).get("results", []))
-            for phase_data in search_results["phase_results"].values()
-            for query_key, query_data in phase_data.items()
-            if isinstance(query_data, dict) and "results" in query_data
-        )
+        try:
+            total_results = sum(
+                len(query_data.get("results", []))
+                for query_data in search_results["phase_results"].get("phase1_detailed_regulations", {}).values()
+                if isinstance(query_data, dict) and "results" in query_data
+            )
+        except Exception as e:
+            print(f"  ⚠️ 통계 계산 실패: {e}")
+            total_results = 0
         
-        print(f"\n✅ [DETAILED REGULATIONS] 추출 완료")
+        print(f"\n✅ [PHASE 1] 세부 규정 추출 완료")
         print(f"  📊 총 검색 결과: {total_results}개")
         print(f"  🔍 Phase 1 (세부 규정): {len(search_results['phase_results']['phase1_detailed_regulations'])}개 쿼리")
-        print(f"  🧪 Phase 2 (검사 절차): {len(search_results['phase_results']['phase2_testing_procedures'])}개 쿼리")
-        print(f"  ⚖️ Phase 3 (처벌 정보): {len(search_results['phase_results']['phase3_penalties_enforcement'])}개 쿼리")
-        print(f"  ⏰ Phase 4 (유효기간): {len(search_results['phase_results']['phase4_validity_periods'])}개 쿼리")
         
         # 추출된 세부 규정 통계
-        for regulation_type, regulations in search_results["extracted_regulations"].items():
+        for regulation_type, regulations in search_results.get("extracted_regulations", {}).items():
             if regulations:
                 print(f"  📋 {regulation_type}: {len(regulations)}개")
+        
+        # 요약 정보 추가
+        search_results["summary"] = f"Phase 1 분석 완료: {total_results}개 결과 수집"
         
         return search_results
     

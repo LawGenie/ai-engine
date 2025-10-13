@@ -1,9 +1,45 @@
+"""
+채팅 라우터 (통합 레이어)
+
+Original Implementation:
+- Location: chatbot-api/
+- Files: app/api/routes/chat.py, app/services/openai_service.py, app/schemas/message.py
+- Author: JengInu
+- Purpose: OpenAI 기반 FDA 수출 관련 챗봇 API
+
+Integration Work:
+- Date: 2025-10-13
+- Purpose: 메인 AI Engine에 챗봇 기능 통합 (포트 8002 → 8000 통합)
+- Changes: OpenAI 채팅 서비스를 app/services/openai_chat_service.py로 통합, 
+           Backend API 연결 경로 변경 (8002/api/chat → 8000/chat/api)
+
+Note: 
+원본 코드는 chatbot-api/ 디렉토리에 보존되어 있으며,
+이 파일은 기존 챗봇 기능과 새로운 OpenAI 스트리밍 API를 모두 제공합니다.
+원작자(JengInu)의 기여 이력은 chatbot-api/ 디렉토리의 Git 이력에서 확인 가능합니다.
+"""
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Dict, Any
 from app.schemas.product import ChatRequest, ChatResponse
 from app.schemas.common import BaseResponse
+from app.services.openai_chat_service import OpenAIChatService, MessageRequest
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# OpenAI 채팅 서비스 (chatbot-api 통합)
+chat_service = None
+
+def get_chat_service():
+    """OpenAI 채팅 서비스 싱글톤"""
+    global chat_service
+    if chat_service is None:
+        try:
+            chat_service = OpenAIChatService()
+        except ValueError:
+            # OPENAI_API_KEY가 없는 경우
+            pass
+    return chat_service
 
 @router.post("/", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -129,4 +165,27 @@ async def handle_general_question(request: ChatRequest) -> ChatResponse:
         sources=[],
         confidence=0.5,
         analysis_type="general"
+    )
+
+# ==================== OpenAI Chatbot API (통합) ====================
+
+@router.post("/api")
+async def chat_with_openai(request: MessageRequest):
+    """
+    OpenAI 기반 채팅 API (chatbot-api에서 통합)
+    
+    Backend API의 ChatService가 호출하는 엔드포인트
+    URL: POST /chat/api
+    """
+    service = get_chat_service()
+    
+    if service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="채팅 서비스를 사용할 수 없습니다. OPENAI_API_KEY를 설정해주세요."
+        )
+    
+    return StreamingResponse(
+        service.generate_chat_stream(request.message, request.sender),
+        media_type="application/json"
     )

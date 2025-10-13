@@ -85,8 +85,8 @@ class ProductRegistrationWorkflow:
                 hs_code=state.selected_hs_code,
                 product_name=product_name,
                 product_description=product_description,
-                force_refresh=False,  # 상품 등록 시에는 캐시 확인 안함
-                is_new_product=True   # 신규 상품으로 처리
+                force_refresh=False,  # 기존 분석 결과가 있으면 재사용
+                is_new_product=False  # HS 코드 기반 캐시 확인 활성화
             )
             print(f"✅ 요구사항 분석 완료")
             

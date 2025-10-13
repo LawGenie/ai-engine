@@ -298,6 +298,58 @@ class KeywordExtractionResponse(BaseModel):
     processing_time_ms: int
 
 
+@router.get("/regulatory-updates/status")
+async def get_regulatory_monitoring_status():
+    """
+    규제 변경 모니터링 상태 조회
+    
+    Returns:
+        - is_active: 모니터링 활성화 여부
+        - check_interval_days: 체크 주기 (7일)
+        - monitored_agencies: 모니터링 대상 기관 목록
+        - total_feeds: 모니터링 중인 RSS 피드 수
+    """
+    try:
+        from app.services.requirements.regulatory_update_monitor import regulatory_monitor
+        status = regulatory_monitor.get_monitoring_status()
+        
+        return {
+            "status": "success",
+            "monitoring": status,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@router.post("/regulatory-updates/check-now")
+async def force_check_regulatory_updates():
+    """
+    규제 변경 즉시 체크 (수동 트리거)
+    
+    개발/테스트 목적으로 7일 주기를 기다리지 않고 즉시 체크
+    """
+    try:
+        from app.services.requirements.regulatory_update_monitor import regulatory_monitor
+        
+        # 백그라운드로 체크 실행
+        asyncio.create_task(regulatory_monitor.force_check_now())
+        
+        return {
+            "status": "success",
+            "message": "규제 변경 체크를 백그라운드로 시작했습니다",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.post("/extract-keywords", response_model=KeywordExtractionResponse)
 async def extract_keywords(request: KeywordExtractionRequest):
     """

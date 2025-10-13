@@ -37,25 +37,108 @@ class LlmSummaryService:
         self.openai_client = AsyncOpenAI()
         self.cache_ttl = 86400  # 24시간
         
-        # GPT 프롬프트 템플릿 (Citations 포함)
+        # GPT 프롬프트 템플릿 (Citations 포함, 다국어 번역 지원)
         self.summary_prompt_template = """
 You are an expert US import compliance analyst. Analyze the import regulations for product "{product_name}" (HS Code: {hs_code}) based on the following official sources.
+
+**🌐 CRITICAL - LANGUAGE & TRANSLATION RULES:**
+- Product name/description and analysis results should BOTH have original + Korean translation
+- For product info: Keep original in base field, add Korean translation in "_ko" field
+  * product_name: original language (English/Chinese/Japanese/etc.)
+  * product_name_ko: Korean translation
+  * product_description: original language
+  * product_description_ko: Korean translation
+- For analysis results: English in base field, Korean in "_ko" field
+  * requirement: English
+  * requirement_ko: Korean translation
+- Example: "保湿霜" → product_name: "保湿霜", product_name_ko: "보습 크림"
+- This allows both keyword matching (original) and user display (Korean)
 
 ## Available Sources (with URLs):
 {documents}
 
 ## Your Task:
-Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For each requirement, document, or recommendation, include the source URL(s) that support it.
+Provide a comprehensive, actionable analysis in JSON format.
 
-## Response Format (JSON):
+**🚨 CRITICAL - SOURCE URL REQUIREMENTS**:
+1. **NEVER** use "ACTUAL_URL_FROM_SOURCES_ABOVE" as-is
+2. **ALWAYS** extract real URLs from the ## Available Sources section above
+3. Match each requirement/document to its corresponding source URL
+4. If no specific URL matches, use the agency's main website:
+   - FDA: https://www.fda.gov/
+   - USDA: https://www.usda.gov/
+   - EPA: https://www.epa.gov/
+   - CPSC: https://www.cpsc.gov/
+   - CBP: https://www.cbp.gov/
+5. Every "source_url" field MUST be a valid HTTP/HTTPS URL
+
+## Response Format (JSON with Bilingual Support):
+**CRITICAL INSTRUCTIONS**: 
+- Replace "ACTUAL_URL_FROM_SOURCES_ABOVE" with REAL URLs from the sources provided above
+- NEVER leave "ACTUAL_URL_FROM_SOURCES_ABOVE" as-is - always use actual URLs
+- If no specific URL available, use the agency's main regulation page
+- Include ALL fields in the response, especially:
+  * execution_checklist (pre_import, during_import, post_import tasks)
+  * cost_breakdown (mandatory_costs, optional_costs, hidden_costs)
+  * risk_matrix (high_risk, medium_risk items)
+  * compliance_score (overall_score with category breakdown)
+  * market_access (retailer_requirements, state_regulations)
+
+**TRANSLATION EXAMPLES:**
+
+Product Info (Original + Korean):
+- Chinese: product_name: "保湿蜗牛霜", product_name_ko: "보습 달팽이 크림"
+- Japanese: product_name: "保湿クリーム", product_name_ko: "보습 크림"
+- English: product_name: "Moisturizing Cream", product_name_ko: "보습 크림"
+- Mixed: product_name: "红参提取物 Premium", product_name_ko: "홍삼 추출물 프리미엄"
+
+Analysis Results (English + Korean):
+- Requirement: "FDA cosmetic regulations compliance" → requirement_ko: "FDA 화장품 규정 준수"
+- Document: "Certificate of Free Sale" → document_ko: "자유 판매 증명서"
+- Action: "Submit prior notice" → action_ko: "사전 통지 제출"
+- Risk: "Product detention at customs" → risk_ko: "세관에서 제품 억류"
+
+DO NOT translate:
+- HS codes: 3304.99.50.00 (keep as-is)
+- URLs: source_url fields (keep as-is)
+- Agency abbreviations in Korean: FDA, EPA, USDA, CBP (keep in English even in _ko fields)
+
+**CRITICAL CALCULATION REQUIREMENTS:**
+1. ALL numeric values (costs, days, scores) MUST be calculated based on ACTUAL requirements, NOT example values
+2. EVERY calculated value MUST include a "reasoning" field explaining WHY that value was chosen
+3. Use SPECIFIC numbers, not ranges of 5 or 10 - calculate precise values (e.g., 73, 82, 91 instead of 70, 80, 90)
+4. Avoid repeating the same values across different products - each analysis should be unique
+
+**COMPLIANCE SCORE CALCULATION:**
+- Calculate realistic scores based on ACTUAL requirements complexity
+- Documentation: 90-95 if ≤3 simple docs, 70-85 if 4-7 docs, 40-65 if 8+ complex docs
+- Testing: 85-95 if basic visual/physical, 60-80 if lab testing, 30-55 if multi-phase testing
+- Labeling: 90-95 if standard FDA, 65-85 if bilingual+warnings, 50-60 if state-specific
+- Timeline: 85-95 if <30 days, 65-80 if 30-60 days, 40-60 if >60 days
+- Cost efficiency: 80-90 if <$1000, 60-75 if $1000-$3000, 35-55 if >$3000
+- Overall score should be weighted average (not rounded to nearest 5)
+- MUST include reasoning for each category score
+
+**COST ESTIMATION REQUIREMENTS:**
+- Base estimates on ACTUAL number of certifications, tests, and documents required
+- Simple cosmetics: ~$800-$2000, Food products: ~$1500-$3500, Electronics: ~$2000-$5000
+- Include reasoning explaining main cost drivers (e.g., "3 FDA certifications + 2 lab tests")
+
+**TIMELINE ESTIMATION REQUIREMENTS:**
+- Calculate based on ACTUAL processing steps identified
+- Include reasoning explaining critical path (e.g., "FDA review 15 days + lab testing 10 days + documentation 7 days")
+- Focus on actionable, specific information over generic statements
+
 {{
     "critical_requirements": [
         {{
             "requirement": "Specific requirement description",
+            "requirement_ko": "요구사항 한국어 설명",
             "agency": "FDA/USDA/EPA/etc",
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "severity": "mandatory/recommended",
             "penalty_if_violated": "Brief description of consequences",
+            "penalty_if_violated_ko": "위반 시 처벌 한국어 설명",
             "effective_date": "YYYY-MM-DD (when this regulation took effect)",
             "last_updated": "YYYY-MM-DD (most recent update)"
         }}
@@ -63,50 +146,62 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
     "required_documents": [
         {{
             "document": "Document name",
+            "document_ko": "문서명 한국어",
             "issuing_authority": "Who issues this",
-            "source_url": "https://...",
+            "issuing_authority_ko": "발급 기관 한국어",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "estimated_time": "Processing time",
-            "notes": "Important details"
+            "estimated_time_ko": "소요 시간 한국어",
+            "notes": "Important details",
+            "notes_ko": "주의사항 한국어"
         }}
     ],
     "compliance_steps": [
         {{
             "step": 1,
             "action": "Specific action to take",
+            "action_ko": "조치 사항 한국어",
             "responsible_party": "Who should do this",
-            "source_url": "https://...",
+            "responsible_party_ko": "담당자 한국어",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "estimated_duration": "Time needed",
+            "estimated_duration_ko": "소요 시간 한국어",
             "dependencies": ["Previous steps if any"]
         }}
     ],
-    "estimated_costs": {{
-        "certification": {{"min": 500, "max": 1000, "currency": "USD", "source_url": "https://..."}},
-        "testing": {{"min": 300, "max": 800, "currency": "USD", "source_url": "https://..."}},
-        "legal_review": {{"min": 200, "max": 500, "currency": "USD", "source_url": "https://..."}},
-        "total": {{"min": 1000, "max": 2300, "currency": "USD"}},
-        "notes": "Cost estimates based on typical cases"
+    "estimated_costs": {{ // ⚠️ REQUIRED - Calculate based on actual requirements
+        "certification": {{"min": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "max": [CALCULATE_BASED_ON_CERT_COMPLEXITY], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on X certifications required"}},
+        "testing": {{"min": [CALCULATE_BASED_ON_TEST_COUNT], "max": [CALCULATE_BASED_ON_TEST_COUNT], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on Y tests needed"}},
+        "legal_review": {{"min": [CALCULATE_BASED_ON_COMPLEXITY], "max": [CALCULATE_BASED_ON_COMPLEXITY], "currency": "USD", "source_url": "ACTUAL_URL", "reasoning": "Based on regulatory complexity"}},
+        "total": {{"min": [SUM_OF_MINIMUMS], "max": [SUM_OF_MAXIMUMS], "currency": "USD"}},
+        "notes": "Estimates based on [SPECIFY_BASIS: e.g., typical FDA cosmetic import, FDA food facility, etc.]"
     }},
-    "timeline": {{
-        "minimum_days": 30,
-        "typical_days": 45,
-        "maximum_days": 60,
-        "critical_path": ["Step 1", "Step 2", "Step 3"],
-        "source_url": "https://..."
+    "timeline": {{ // ⚠️ REQUIRED - Calculate based on actual processing times
+        "minimum_days": [FASTEST_SCENARIO_BASED_ON_REQUIREMENTS],
+        "typical_days": [AVERAGE_SCENARIO_BASED_ON_REQUIREMENTS],
+        "maximum_days": [WORST_CASE_BASED_ON_REQUIREMENTS],
+        "critical_path": ["ACTUAL step 1 from requirements", "ACTUAL step 2", "etc"],
+        "source_url": "ACTUAL_URL",
+        "reasoning": "Timeline based on [SPECIFY: e.g., FDA review + testing + documentation prep]"
     }},
     "risk_factors": [
         {{
             "risk": "Specific risk description",
+            "risk_ko": "위험 요소 한국어 설명",
             "likelihood": "high/medium/low",
             "impact": "high/medium/low",
             "mitigation": "How to mitigate this risk",
+            "mitigation_ko": "완화 방안 한국어",
             "source_url": "https://..."
         }}
     ],
     "recommendations": [
         {{
             "recommendation": "Actionable recommendation",
+            "recommendation_ko": "권장사항 한국어",
             "priority": "high/medium/low",
             "rationale": "Why this is important",
+            "rationale_ko": "이유 한국어",
             "source_url": "https://..."
         }}
     ],
@@ -115,7 +210,7 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
             "element": "Ingredient list/Country of origin/etc",
             "requirement": "Specific requirement",
             "agency": "FDA/FTC/etc",
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "format": "Required format",
             "placement": "Where on package",
             "language": "English/Bilingual",
@@ -128,7 +223,7 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
             "status": "prohibited/restricted",
             "max_concentration": "If restricted",
             "agency": "Regulating agency",
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "alternatives": ["Safe alternatives if available"]
         }}
     ],
@@ -138,7 +233,7 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
             "required_for": "Product categories",
             "deadline": "When to submit",
             "submission_method": "How to submit",
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "processing_time": "Expected time",
             "consequences_if_missed": "What happens"
         }}
@@ -149,9 +244,9 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
             "required_by": "Agency",
             "frequency": "How often",
             "accredited_labs": ["Lab names"],
-            "cost_per_test": {{"min": 200, "max": 500, "currency": "USD"}},
+            "cost_per_test": {{"min": [ACTUAL_COST_MIN], "max": [ACTUAL_COST_MAX], "currency": "USD", "reasoning": "Based on test type complexity"}},
             "turnaround_time": "Days",
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "pass_criteria": "Acceptance criteria"
         }}
     ],
@@ -160,11 +255,27 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
             "certification": "Certification name",
             "type": "mandatory/voluntary",
             "purpose": "What it certifies",
-            "cost_range": {{"min": 1000, "max": 5000, "currency": "USD"}},
+            "cost_range": {{"min": [ACTUAL_CERT_COST_MIN], "max": [ACTUAL_CERT_COST_MAX], "currency": "USD", "reasoning": "Based on certification scope"}},
             "validity": "Duration",
             "recognized_bodies": ["Certifying organizations"],
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "market_advantage": "Business benefit"
+        }}
+    ],
+    "exemptions": [
+        {{
+            "exemption_type": "De minimis/Low value/Specific category",
+            "condition": "Product value < $800 OR Category XYZ",
+            "condition_ko": "조건 한국어 설명",
+            "exempted_from": ["FDA Prior Notice", "Specific requirement"],
+            "exempted_from_ko": ["FDA 사전 통지", "특정 요건"],
+            "limitations": "What is NOT exempted",
+            "limitations_ko": "면제되지 않는 사항 한국어",
+            "how_to_claim": "Documentation or process needed",
+            "how_to_claim_ko": "신청 방법 한국어",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
+            "notes": "Important caveats",
+            "notes_ko": "주의사항 한국어"
         }}
     ],
     "customs_clearance": {{
@@ -185,7 +296,7 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
             "state": "California/New York/etc",
             "requirement": "Specific state requirement",
             "applies_to": "Product categories",
-            "source_url": "https://...",
+            "source_url": "https://www.fda.gov/ (or specific URL from sources)",
             "penalty": "State-level penalties"
         }}
     ],
@@ -217,32 +328,202 @@ Provide a comprehensive, actionable analysis in JSON format. **IMPORTANT**: For 
         "sources_expected": 8,
         "missing_areas": ["Areas where data is lacking"],
         "recommendation": "Consult customs broker/attorney if needed"
+    }},
+    "execution_checklist": {{ // ⚠️ REQUIRED - Must include pre/during/post import tasks
+        "pre_import": [
+            {{
+                "task": "Specific pre-import task",
+                "task_ko": "수입 전 작업 한국어",
+                "deadline": "When to complete",
+                "deadline_ko": "완료 시한 한국어",
+                "responsible": "Who does this",
+                "responsible_ko": "담당자 한국어",
+                "priority": "high/medium/low",
+                "estimated_hours": 2,
+                "dependencies": ["Prerequisite tasks"],
+                "success_criteria": "How to verify completion",
+                "success_criteria_ko": "완료 확인 방법 한국어",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ],
+        "during_import": [
+            {{
+                "task": "Import process task",
+                "task_ko": "수입 과정 작업 한국어",
+                "timing": "When during import",
+                "timing_ko": "수입 중 시점 한국어",
+                "estimated_hours": 4,
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ],
+        "post_import": [
+            {{
+                "task": "Post-import compliance task",
+                "task_ko": "수입 후 준수 작업 한국어",
+                "deadline": "When to complete",
+                "estimated_hours": 1,
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ]
+    }},
+    "cost_breakdown": {{ // ⚠️ REQUIRED - Must include mandatory/optional/hidden costs
+        "mandatory_costs": {{
+            "testing": {{"min": 300, "max": 800, "currency": "USD", "frequency": "per_batch", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}},
+            "certification": {{"min": 500, "max": 1500, "currency": "USD", "frequency": "annual", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}},
+            "prior_notice": {{"min": 0, "max": 0, "currency": "USD", "frequency": "per_shipment", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}}
+        }},
+        "optional_costs": {{
+            "legal_review": {{"min": 200, "max": 500, "currency": "USD", "frequency": "one_time", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}},
+            "consultation": {{"min": 100, "max": 300, "currency": "USD", "frequency": "as_needed", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}}
+        }},
+        "hidden_costs": {{
+            "storage_fees": {{"min": 50, "max": 200, "currency": "USD", "frequency": "per_day", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}},
+            "inspection_fees": {{"min": 0, "max": 500, "currency": "USD", "frequency": "if_inspected", "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"}}
+        }},
+        "cost_optimization": [
+            {{
+                "strategy": "Cost-saving strategy",
+                "strategy_ko": "비용 절약 전략 한국어",
+                "potential_savings": "Amount saved",
+                "potential_savings_ko": "절약 금액 한국어",
+                "trade_offs": "What you give up",
+                "trade_offs_ko": "대가 한국어",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ]
+    }},
+    "risk_matrix": {{ // ⚠️ REQUIRED - Must include high/medium risk assessment
+        "high_risk": [
+            {{
+                "risk": "High-impact risk",
+                "risk_ko": "고위험 요소 한국어",
+                "probability": "high/medium/low",
+                "impact": "high/medium/low",
+                "detection_method": "How to detect early",
+                "detection_method_ko": "조기 감지 방법 한국어",
+                "contingency_plan": "What to do if it happens",
+                "contingency_plan_ko": "발생시 대응 방안 한국어",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ],
+        "medium_risk": [
+            {{
+                "risk": "Medium-impact risk",
+                "risk_ko": "중위험 요소 한국어",
+                "probability": "medium",
+                "impact": "medium",
+                "monitoring_frequency": "How often to check",
+                "monitoring_frequency_ko": "확인 주기 한국어",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ]
+    }},
+    "compliance_score": {{ // ⚠️ REQUIRED - Must calculate overall readiness score based on ACTUAL analysis
+        "overall_score": [CALCULATE_WEIGHTED_AVERAGE_OF_CATEGORIES],
+        "category_scores": {{
+            "documentation": {{
+                "score": [CALCULATE: 90-95 if ≤3 simple docs, 70-85 if 4-7 docs, 40-65 if 8+ complex docs],
+                "weight": 0.3,
+                "max_score": 100,
+                "reasoning": "Based on [X] required documents with [complexity level]"
+            }},
+            "testing": {{
+                "score": [CALCULATE: 85-95 if basic visual/physical, 60-80 if lab testing, 30-55 if multi-phase testing],
+                "weight": 0.25,
+                "max_score": 100,
+                "reasoning": "Based on [test count] tests requiring [complexity description]"
+            }},
+            "labeling": {{
+                "score": [CALCULATE: 90-95 if standard FDA, 65-85 if bilingual+warnings, 50-60 if state-specific],
+                "weight": 0.2,
+                "max_score": 100,
+                "reasoning": "Based on [labeling requirements count] with [special requirements]"
+            }},
+            "timeline": {{
+                "score": [CALCULATE: 85-95 if <30 days, 65-80 if 30-60 days, 40-60 if >60 days],
+                "weight": 0.15,
+                "max_score": 100,
+                "reasoning": "Typical processing time of [X] days including [main bottlenecks]"
+            }},
+            "cost_efficiency": {{
+                "score": [CALCULATE: 80-90 if <$1000, 60-75 if $1000-$3000, 35-55 if >$3000],
+                "weight": 0.1,
+                "max_score": 100,
+                "reasoning": "Total estimated cost of $[X]-$[Y] for [main cost drivers]"
+            }}
+        }},
+        "improvement_areas": [
+            {{
+                "area": "Area needing improvement",
+                "area_ko": "개선 영역 한국어",
+                "current_gap": "What's missing",
+                "current_gap_ko": "부족한 부분 한국어",
+                "action_plan": "How to improve",
+                "action_plan_ko": "개선 방안 한국어",
+                "priority": "high/medium/low",
+                "estimated_effort": "hours/days/weeks",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ]
+    }},
+    "market_access": {{ // ⚠️ REQUIRED - Must include retailer and state requirements
+        "retailer_requirements": [
+            {{
+                "retailer": "Amazon/Walmart/Target/etc",
+                "specific_requirements": ["Retailer-specific requirements"],
+                "specific_requirements_ko": ["소매업체별 요구사항 한국어"],
+                "certifications_needed": ["Additional certifications"],
+                "certifications_needed_ko": ["추가 인증 한국어"],
+                "compliance_deadline": "When to comply",
+                "compliance_deadline_ko": "준수 시한 한국어",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ],
+        "state_regulations": [
+            {{
+                "state": "California/New York/etc",
+                "regulation": "State-specific requirement",
+                "regulation_ko": "주별 특수 요구사항 한국어",
+                "applies_to": "Product categories",
+                "applies_to_ko": "적용 상품 카테고리 한국어",
+                "penalty": "State-level penalty",
+                "penalty_ko": "주별 처벌 한국어",
+                "source_url": "ACTUAL_URL_FROM_SOURCES_ABOVE"
+            }}
+        ]
     }}
 }}
 
-## Guidelines:
-1. **Citations**: Every claim MUST include a source_url from the provided sources
-2. **Specificity**: Use exact numbers, dates, and requirements (not vague terms)
-3. **Actionability**: Each step should be clear enough to execute immediately
-4. **Prioritization**: Order items by importance/urgency
-5. **Risk Assessment**: Be realistic about potential issues
-6. **Cost Accuracy**: Provide ranges based on typical cases, cite sources
-7. **Timeline Realism**: Account for government processing times
-8. **Agency Identification**: Clearly identify which agency regulates what
-9. **Confidence**: Lower confidence if sources are limited or contradictory
-10. **Product-Specific**: Tailor advice to the specific HS code and product category
-11. **Labeling Focus**: Pay special attention to labeling requirements (critical for customs)
-12. **Prohibited Substances**: Explicitly identify any banned/restricted ingredients
-13. **Prior Notice**: Highlight any pre-arrival notification requirements
-14. **Testing**: Specify which tests are mandatory vs recommended
-15. **State Laws**: Include California Prop 65 and other major state requirements
-16. **Practical Costs**: Include all costs (testing, certification, legal, bonds, insurance)
-17. **Customs Reality**: Mention inspection probability and common detention reasons
-18. **Market Access**: Note retailer-specific requirements (Amazon, Walmart, etc)
-19. **Updates**: Flag recent regulatory changes that may affect compliance
-20. **Completeness**: Indicate data gaps and recommend professional consultation when needed
-21. **Dates**: Extract effective_date and last_updated from source data when available (FDA uses report_date, recall_initiation_date)
-22. **Recency**: Prioritize more recent regulations and flag outdated information
+## Guidelines (Enhanced Requirements Extraction):
+1. **Bilingual Support**: Provide both English and Korean (_ko suffix) for all user-facing text
+2. **Citations**: Every claim MUST include a source_url from the provided sources
+3. **Specificity**: Use exact numbers, dates, and requirements (not vague terms)
+4. **Actionability**: Each step should be clear enough to execute immediately
+5. **Prioritization**: Order items by importance/urgency (High/Medium/Low)
+6. **Risk Assessment**: Be realistic about potential issues with probability/impact matrix
+7. **Cost Accuracy**: Provide ranges based on typical cases, include hidden costs, cite sources
+8. **Timeline Realism**: Account for government processing times, identify critical path
+9. **Agency Identification**: Clearly identify which agency regulates what
+10. **Confidence**: Lower confidence if sources are limited or contradictory
+11. **Product-Specific**: Tailor advice to the specific HS code and product category
+12. **Execution Focus**: Generate actionable checklists, not just information
+13. **Cost Optimization**: Identify money-saving strategies and trade-offs
+14. **Risk Management**: Provide early warning systems and contingency plans
+15. **Compliance Scoring**: Rate compliance readiness with improvement areas
+16. **Market Access**: Include retailer and state-specific requirements
+17. **Completeness Check**: Identify gaps and recommend professional consultation
+18. **Practical Reality**: Include real-world challenges (storage, inspection, delays)
+19. **Exemptions**: Explicitly identify any exemption conditions (de minimis, low value, category exemptions)
+20. **Labeling Focus**: Pay special attention to labeling requirements (critical for customs)
+21. **Prohibited Substances**: Explicitly identify any banned/restricted ingredients
+22. **Prior Notice**: Highlight any pre-arrival notification requirements
+23. **Testing**: Specify which tests are mandatory vs recommended
+24. **State Laws**: Include California Prop 65 and other major state requirements
+25. **Practical Costs**: Include all costs (testing, certification, legal, bonds, insurance)
+26. **Customs Reality**: Mention inspection probability and common detention reasons
+27. **Updates**: Flag recent regulatory changes that may affect compliance
+28. **Dates**: Extract effective_date and last_updated from source data when available
+29. **Recency**: Prioritize more recent regulations and flag outdated information
 
 ## Important:
 - If information is missing from sources, indicate "Not found in provided sources"
@@ -368,7 +649,7 @@ Return ONLY valid, parseable JSON. No markdown, no comments, no additional text.
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 response_format={"type": "json_object"},
-                max_tokens=2000
+                max_tokens=4000  # 확장된 JSON 구조를 위해 증가 (2000 → 4000)
             )
             
             response_time = (datetime.now() - start_time).total_seconds()
@@ -376,12 +657,45 @@ Return ONLY valid, parseable JSON. No markdown, no comments, no additional text.
             # 응답 파싱 (JSON 파싱 에러 방지)
             try:
                 content = response.choices[0].message.content
+                
+                # JSON 파싱 시도
                 result = json.loads(content)
+                
+                # 필수 필드 검증
+                required_fields = ["critical_requirements", "required_documents", "compliance_steps"]
+                for field in required_fields:
+                    if field not in result:
+                        print(f"⚠️ 필수 필드 누락: {field} - 빈 배열로 초기화")
+                        result[field] = []
+                
+                # Optional 필드 기본값 설정
+                optional_fields = {
+                    "execution_checklist": None,
+                    "cost_breakdown": None,
+                    "risk_matrix": None,
+                    "compliance_score": None,
+                    "market_access": None
+                }
+                for field, default_value in optional_fields.items():
+                    if field not in result:
+                        result[field] = default_value
+                
             except json.JSONDecodeError as json_err:
                 print(f"❌ JSON 파싱 실패: {json_err}")
                 print(f"📄 GPT 응답 내용 (처음 500자): {content[:500] if content else 'None'}")
-                # JSON 파싱 실패 시 빈 결과 반환
-                return None
+                
+                # JSON 파싱 실패 시에도 부분적으로 복구 시도
+                try:
+                    # JSON 수정 시도 (마지막 닫는 괄호 추가)
+                    if content and not content.strip().endswith('}'):
+                        content_fixed = content.strip() + '}'
+                        result = json.loads(content_fixed)
+                        print(f"✅ JSON 복구 성공")
+                    else:
+                        return None
+                except:
+                    # 복구 실패 시 빈 결과 반환
+                    return None
             
             # 메타데이터 추가
             result["tokens_used"] = response.usage.total_tokens

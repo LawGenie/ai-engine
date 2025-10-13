@@ -10,10 +10,11 @@ class Settings(BaseSettings):
     
     # FastAPI 설정
     fastapi_host: str = "0.0.0.0"
-    fastapi_port: int = 8000
+    fastapi_port: int = 8001  # 변경: Main API(8000)와 충돌 방지
     
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # 추가 필드 무시 (다른 서비스의 .env 키 허용)
 
 settings = Settings()

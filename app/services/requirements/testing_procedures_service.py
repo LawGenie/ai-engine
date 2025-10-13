@@ -14,7 +14,7 @@ from .tavily_search import TavilySearchService
 
 
 class TestingProceduresService:
-    """검사 절차 및 방법 분석 전용 서비스"""
+    """검사 절차 및 방법 분석 전용 서비스 (Phase 2)"""
 
     def __init__(self) -> None:
         self.tavily = TavilySearchService()
@@ -26,17 +26,124 @@ class TestingProceduresService:
             "CPSC": "cpsc.gov",
             "CBP": "cbp.gov"
         }
+        
+        # HS 코드별 검사 절차 매핑 (상세화)
+        self.hs_testing_mapping = self._build_testing_mapping()
+    
+    def _build_testing_mapping(self) -> Dict[str, Dict[str, Any]]:
+        """HS 코드별 검사 절차 맞춤 쿼리 정의"""
+        return {
+            # 화장품 (3304)
+            "3304": {
+                "category": "cosmetics",
+                "testing_focus": ["ingredient_testing", "safety_assessment", "labeling_compliance"],
+                "specific_queries": {
+                    "FDA": [
+                        "FDA cosmetic product testing requirements",
+                        "FDA cosmetic ingredient safety testing",
+                        "FDA cosmetic voluntary cosmetic registration program VCRP",
+                        "FDA cosmetic inspection frequency import"
+                    ],
+                    "EPA": [
+                        "EPA cosmetic chemical testing requirements",
+                        "EPA chemical safety assessment cosmetics"
+                    ],
+                    "CPSC": [
+                        "CPSC cosmetic product safety testing"
+                    ]
+                },
+                "estimated_cycle": "sampling",
+                "typical_cost_range": "medium"
+            },
+            # 건강보조식품 (2106)
+            "2106": {
+                "category": "dietary_supplements",
+                "testing_focus": ["ingredient_testing", "contamination_testing", "label_verification"],
+                "specific_queries": {
+                    "FDA": [
+                        "FDA dietary supplement testing requirements",
+                        "FDA supplement cGMP compliance testing",
+                        "FDA supplement inspection procedures",
+                        "FDA supplement contamination testing heavy metals"
+                    ],
+                    "USDA": [
+                        "USDA organic supplement certification testing",
+                        "USDA organic testing procedures requirements"
+                    ]
+                },
+                "estimated_cycle": "per_import",
+                "typical_cost_range": "high"
+            },
+            # 전자제품 (8471)
+            "8471": {
+                "category": "electronics",
+                "testing_focus": ["emc_testing", "safety_testing", "certification"],
+                "specific_queries": {
+                    "FCC": [
+                        "FCC equipment authorization testing procedures",
+                        "FCC Part 15 testing requirements computers",
+                        "FCC EMC testing accredited labs",
+                        "FCC certification cost timeline computers"
+                    ],
+                    "CPSC": [
+                        "CPSC electronic product safety testing",
+                        "CPSC computer safety standards testing"
+                    ]
+                },
+                "estimated_cycle": "per_import",
+                "typical_cost_range": "high"
+            },
+            # 식품 (1904, 2005)
+            "1904": {
+                "category": "prepared_foods",
+                "testing_focus": ["microbial_testing", "pesticide_testing", "nutritional_analysis"],
+                "specific_queries": {
+                    "FDA": [
+                        "FDA food import testing requirements",
+                        "FDA FSMA foreign supplier verification FSVP",
+                        "FDA food facility inspection frequency",
+                        "FDA food testing labs accredited"
+                    ],
+                    "USDA": [
+                        "USDA food inspection procedures import",
+                        "USDA food testing requirements"
+                    ]
+                },
+                "estimated_cycle": "per_import",
+                "typical_cost_range": "medium"
+            }
+        }
 
     def _build_queries(self, hs_code: str, product_name: str) -> Dict[str, str]:
+        """🚀 최적화된 검사 절차 쿼리 생성 (중복 제거 + 통합)"""
         queries: Dict[str, str] = {}
-        for agency in self.agency_domains.keys():
-            agency_l = agency.lower()
-            queries[f"{agency}_testing_procedures"] = f"site:{agency_l}.gov testing procedures {product_name} HS {hs_code}"
-            queries[f"{agency}_inspection_methods"] = f"site:{agency_l}.gov inspection methods {product_name} HS {hs_code}"
-            queries[f"{agency}_sampling_policy"] = f"site:{agency_l}.gov sampling policy {product_name} HS {hs_code}"
-            queries[f"{agency}_frequency_schedule"] = f"site:{agency_l}.gov inspection frequency schedule {product_name} HS {hs_code}"
-            queries[f"{agency}_cost_time"] = f"site:{agency_l}.gov inspection cost time {product_name} HS {hs_code}"
-        queries["general_testing_terms"] = f"testing inspection sampling cost time {product_name} HS {hs_code} site:.gov"
+        
+        # HS 코드에서 4자리 추출
+        hs_4digit = hs_code.split('.')[0] if '.' in hs_code else hs_code[:4]
+        
+        # HS 코드별 맞춤 쿼리
+        mapping = self.hs_testing_mapping.get(hs_4digit)
+        
+        if mapping:
+            # 🚀 맞춤형 통합 쿼리 (기존 8-10개 → 2-3개)
+            print(f"  🎯 {mapping['category']} 맞춤형 검사 쿼리 생성 (통합 최적화)")
+            
+            # 기관별 쿼리를 하나로 통합
+            for agency, agency_queries in mapping.get("specific_queries", {}).items():
+                # 모든 agency_queries를 하나의 통합 쿼리로
+                combined_keywords = " ".join([q.replace(f"{agency} ", "").split()[0:3] for q in agency_queries[:2]])
+                queries[f"{agency}_integrated"] = f"site:{agency.lower()}.gov {combined_keywords} {product_name} {hs_code}"
+            
+            # testing_focus도 하나로 통합
+            if mapping.get("testing_focus"):
+                focus_combined = " ".join(mapping.get("testing_focus", []))
+                queries["focus_integrated"] = f"{focus_combined} testing procedures {product_name} site:.gov"
+        else:
+            # 🚀 최적화된 일반 통합 쿼리 (기존 3개 → 1개)
+            print(f"  ⚠️ HS 코드 매핑 없음 - 통합 쿼리 사용")
+            queries["general_integrated"] = f"site:.gov testing procedures inspection cost timeline {product_name} {hs_code}"
+        
+        print(f"  📊 통합 최적화 쿼리 수: {len(queries)}개 (기존 대비 ~85% 감소)")
         return queries
 
     def _infer_agency(self, url: str) -> Optional[str]:
@@ -89,7 +196,14 @@ class TestingProceduresService:
 
         cost_band = "unknown"
         if extracted["costs"]:
-            text = " ".join(i["snippet"].lower() for i in extracted["costs"])
+            # 안전한 문자열 추출
+            text_parts = []
+            for i in extracted["costs"]:
+                if isinstance(i, dict) and "snippet" in i:
+                    text_parts.append(i["snippet"].lower())
+                elif isinstance(i, str):
+                    text_parts.append(i.lower())
+            text = " ".join(text_parts)
             if any(k in text for k in ["$50", "$100", "fee"]):
                 cost_band = "low"
             if any(k in text for k in ["$500", "$1,000", "laboratory"]):
@@ -99,7 +213,14 @@ class TestingProceduresService:
 
         duration_band = "unknown"
         if extracted["durations"]:
-            text = " ".join(i["snippet"].lower() for i in extracted["durations"])
+            # 안전한 문자열 추출
+            text_parts = []
+            for i in extracted["durations"]:
+                if isinstance(i, dict) and "snippet" in i:
+                    text_parts.append(i["snippet"].lower())
+                elif isinstance(i, str):
+                    text_parts.append(i.lower())
+            text = " ".join(text_parts)
             if any(k in text for k in ["1-3 days", "2 days", "48 hours", "72 hours"]):
                 duration_band = "short"
             if any(k in text for k in ["1-2 weeks", "5-10 business days"]):
@@ -119,7 +240,7 @@ class TestingProceduresService:
         aggregate_results: List[Dict[str, Any]] = []
         for _, q in queries.items():
             try:
-                res = await self.tavily.search(q, max_results=5)
+                res = await self.tavily.search(q, max_results=10)  # 통합 쿼리이므로 결과 증가
                 aggregate_results.extend(res)
             except Exception:
                 continue
@@ -128,19 +249,37 @@ class TestingProceduresService:
         estimates = self._estimate_cost_time(extracted)
 
         cycle_label = "unknown"
-        joined_cycles = " ".join(i["snippet"].lower() for i in extracted["cycles"])
-        if any(k in joined_cycles for k in ["every import", "per shipment", "per import"]):
-            cycle_label = "per_import"
-        elif any(k in joined_cycles for k in ["annual", "yearly"]):
-            cycle_label = "annual"
-        elif any(k in joined_cycles for k in ["sampling", "random sample", "periodic"]):
-            cycle_label = "sampling"
+        if extracted["cycles"]:
+            # 안전한 문자열 추출
+            text_parts = []
+            for i in extracted["cycles"]:
+                if isinstance(i, dict) and "snippet" in i:
+                    text_parts.append(i["snippet"].lower())
+                elif isinstance(i, str):
+                    text_parts.append(i.lower())
+            joined_cycles = " ".join(text_parts)
+            if any(k in joined_cycles for k in ["every import", "per shipment", "per import"]):
+                cycle_label = "per_import"
+            elif any(k in joined_cycles for k in ["annual", "yearly"]):
+                cycle_label = "annual"
+            elif any(k in joined_cycles for k in ["sampling", "random sample", "periodic"]):
+                cycle_label = "sampling"
 
-        methods_label = list({
-            ("chemical" if any(k in (m["snippet"].lower()) for k in ["chemical", "analysis", "lab"]) else None) or
-            ("physical" if any(k in (m["snippet"].lower()) for k in ["visual", "physical", "inspection"]) else None)
-            for m in extracted["methods"]
-        } - {None})
+        methods_label = []
+        if extracted["methods"]:
+            for m in extracted["methods"]:
+                if isinstance(m, dict) and "snippet" in m:
+                    snippet = m["snippet"].lower()
+                    if any(k in snippet for k in ["chemical", "analysis", "lab"]) and "chemical" not in methods_label:
+                        methods_label.append("chemical")
+                    if any(k in snippet for k in ["visual", "physical", "inspection"]) and "physical" not in methods_label:
+                        methods_label.append("physical")
+                elif isinstance(m, str):
+                    snippet = m.lower()
+                    if any(k in snippet for k in ["chemical", "analysis", "lab"]) and "chemical" not in methods_label:
+                        methods_label.append("chemical")
+                    if any(k in snippet for k in ["visual", "physical", "inspection"]) and "physical" not in methods_label:
+                        methods_label.append("physical")
 
         return {
             "hs_code": hs_code,
