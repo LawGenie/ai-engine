@@ -113,23 +113,20 @@ class ValidityService:
         mapping = self.hs_validity_mapping.get(hs_4digit)
         
         if mapping:
-            # 🚀 맞춤형 통합 쿼리 (기존 4-6개 → 1-2개)
-            print(f"  🎯 {mapping['category']} 맞춤형 유효기간 쿼리 생성 (통합 최적화)")
+            # 🚀 초통합 쿼리 전략 (기존 4-6개 → 1개!) - 모든 정보를 하나의 쿼리로
+            print(f"  🎯 {mapping['category']} 맞춤형 유효기간 쿼리 생성 (초통합 최적화)")
             
-            # 기관별 모든 쿼리를 하나로 통합
-            for agency in mapping.get("specific_queries", {}).keys():
-                queries[f"{agency}_integrated"] = f"site:{agency.lower()}.gov certificate validity renewal duration cost {product_name} {hs_code}"
+            # 모든 기관과 인증 유형을 하나의 쿼리로 통합
+            all_agencies = " OR ".join([f"site:{agency.lower()}.gov" for agency in mapping.get("specific_queries", {}).keys()])
+            cert_types = " ".join(mapping.get("certificate_types", [])) if mapping.get("certificate_types") else ""
             
-            # 인증 유형도 하나로 통합 (있을 경우만)
-            if mapping.get("certificate_types"):
-                cert_combined = " ".join(mapping.get("certificate_types", []))
-                queries["cert_integrated"] = f"{cert_combined} validity renewal procedures site:.gov {hs_code}"
+            queries["validity_comprehensive"] = f"({all_agencies}) {cert_types} certificate validity renewal duration cost procedures reminder {product_name} {hs_code}"
         else:
             # 🚀 일반 통합 쿼리 (기존 여러 개 → 1개)
             print(f"  ⚠️ HS 코드 매핑 없음 - 통합 쿼리 사용")
             queries["general_integrated"] = f"site:.gov certificate validity renewal duration cost reminder {product_name} {hs_code}"
         
-        print(f"  📊 통합 최적화 쿼리 수: {len(queries)}개 (기존 대비 ~85% 감소)")
+        print(f"  📊 초통합 최적화 쿼리 수: {len(queries)}개 (기존 대비 ~90% 감소)")
         return queries
 
     def _infer_agency(self, url: str) -> Optional[str]:
@@ -206,7 +203,7 @@ class ValidityService:
         all_results: List[Dict[str, Any]] = []
         for q in queries.values():
             try:
-                res = await self.tavily.search(q, max_results=10)  # 통합 쿼리이므로 결과 증가
+                res = await self.tavily.search(q, max_results=20)  # 증가: 검색 횟수 감소, 더 많은 출처 확보
                 all_results.extend(res)
             except Exception:
                 continue

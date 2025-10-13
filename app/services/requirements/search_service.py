@@ -60,7 +60,7 @@ class SearchService:
     def __init__(self, backend_api_url: str = "http://localhost:8081"):
         self.backend_api_url = backend_api_url
         self.tavily_api_key = os.getenv('TAVILY_API_KEY')
-        self.cache_ttl = 3600  # 1시간
+        self.cache_ttl = 86400 * 7  # 7일 (비용 절감: 같은 쿼리 재사용)
         self.search_strategies = {}
         
         # 무료 API 엔드포인트

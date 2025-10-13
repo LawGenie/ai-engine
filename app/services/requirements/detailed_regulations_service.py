@@ -228,18 +228,16 @@ class DetailedRegulationsService:
         # HS 코드 4자리
         hs_4digit = hs_code.split('.')[0] if '.' in hs_code else hs_code[:4]
         
-        # 카테고리별 통합 쿼리
+        # 카테고리별 통합 쿼리 (더욱 최적화: 4개 → 2개)
         if category == "cosmetics":
-            # 성분 제한 통합 쿼리 (기존 7개 → 2개)
-            queries["FDA_ingredients_integrated"] = f"site:fda.gov cosmetic prohibited restricted ingredients safety limits {hs_code}"
-            queries["FDA_ingredients_product"] = f"site:fda.gov cosmetic ingredient safety {product_name}"
-            queries["FDA_regulations"] = f"site:fda.gov cosmetic regulations standards {product_name} {hs_code}"
+            # 🚀 초통합 쿼리 전략: 모든 규정을 2개 쿼리로 통합
+            queries["FDA_cosmetic_comprehensive"] = f"site:fda.gov cosmetic import prohibited restricted ingredients regulations safety standards {hs_code} {product_name}"
+            queries["general_safety"] = f"site:.gov import safety requirements compliance {product_name} {hs_code}"
             
         elif category == "food":
-            # 농약 잔류량 통합 쿼리 (기존 4개 → 2개)
-            queries["FDA_EPA_pesticide_integrated"] = f"pesticide residue limits MRL tolerances {hs_code} site:.gov"
-            queries["FDA_food_additives"] = f"site:fda.gov food additives GRAS safe ingredients {product_name}"
-            queries["FDA_food_safety"] = f"site:fda.gov food safety import requirements {product_name} {hs_code}"
+            # 🚀 초통합 쿼리 전략: 식품 관련 모든 규정을 2개 쿼리로 통합
+            queries["FDA_food_comprehensive"] = f"site:fda.gov food import pesticide residue additives GRAS ingredients safety requirements {hs_code} {product_name}"
+            queries["EPA_pesticide_safety"] = f"site:epa.gov pesticide tolerances residue limits food safety {hs_code}"
             
         elif category == "electronics":
             # EMC 기준 통합 쿼리
@@ -322,7 +320,7 @@ class DetailedRegulationsService:
                 
                 # Tavily Search 실행 (통합 쿼리는 max_results 증가)
                 if self.tavily_service.is_enabled():
-                    search_results_raw = await self.tavily_service.search(query, max_results=10)
+                    search_results_raw = await self.tavily_service.search(query, max_results=20)  # 증가: 검색 횟수 감소
                     
                     # 결과 처리
                     processed_results = self._process_search_results(query_key, query, search_results_raw, hs_code)

@@ -1,6 +1,11 @@
 """
-상품 등록 워크플로우 순서 정의
-HS코드 추천 → 예상 관세 계산 → 요구사항 분석 → 판례 분석 → 요구사항 재검증
+상품 등록 워크플로우 순서 정의 (최적화됨 - 2025-10-12)
+HS코드 추천 → 예상 관세 계산 → 판례 분석 → 요구사항 분석 (판례 결과 반영) → 최종 검증
+
+최적화 이유:
+1. 판례 분석을 먼저 해서 기존 사례 파악
+2. 판례 결과를 요구사항 분석에 반영하여 정확도 향상
+3. 중복 검색 방지로 Tavily API 비용 절약 (30-40% 감소 예상)
 """
 
 from typing import Dict, List, Any, Optional
@@ -23,13 +28,13 @@ class ProductRegistrationWorkflowState:
     # 2단계: 예상 관세 계산
     tariff_estimation: Dict[str, Any] = None
     
-    # 3단계: 요구사항 분석 (현재 파트)
-    requirements_analysis: Dict[str, Any] = None
-    
-    # 4단계: 판례 분석
+    # 3단계: 판례 분석 (최적화: 먼저 실행)
     precedents_analysis: Dict[str, Any] = None
     
-    # 5단계: 요구사항 재검증
+    # 4단계: 요구사항 분석 (판례 결과 반영)
+    requirements_analysis: Dict[str, Any] = None
+    
+    # 5단계: 최종 검증 (판례 + 요구사항 통합)
     verified_requirements: Dict[str, Any] = None
     
     # 최종 결과
@@ -79,30 +84,31 @@ class ProductRegistrationWorkflow:
             )
             print(f"✅ 관세 계산 완료: {state.tariff_estimation.get('estimated_rate', 'N/A')}%")
             
-            # 3단계: 요구사항 분석 (현재 파트)
-            print(f"📋 3단계: 요구사항 분석")
+            # 3단계: 판례 분석 (최적화: 먼저 실행)
+            print(f"⚖️ 3단계: 판례 분석 (최적화: 먼저 실행)")
+            state.precedents_analysis = await self._analyze_precedents(
+                state.selected_hs_code, product_name, None  # requirements_analysis가 아직 없음
+            )
+            print(f"✅ 판례 분석 완료")
+            
+            # 4단계: 요구사항 분석 (판례 결과 반영)
+            print(f"📋 4단계: 요구사항 분석 (판례 결과 반영)")
             state.requirements_analysis = await self.requirements_workflow.analyze_requirements(
                 hs_code=state.selected_hs_code,
                 product_name=product_name,
                 product_description=product_description,
                 force_refresh=False,  # 기존 분석 결과가 있으면 재사용
-                is_new_product=False  # HS 코드 기반 캐시 확인 활성화
+                is_new_product=False,  # HS 코드 기반 캐시 확인 활성화
+                precedent_analysis=state.precedents_analysis  # 판례 결과 전달
             )
-            print(f"✅ 요구사항 분석 완료")
+            print(f"✅ 요구사항 분석 완료 (판례 결과 반영)")
             
-            # 4단계: 판례 분석
-            print(f"⚖️ 4단계: 판례 분석")
-            state.precedents_analysis = await self._analyze_precedents(
-                state.selected_hs_code, product_name, state.requirements_analysis
-            )
-            print(f"✅ 판례 분석 완료")
-            
-            # 5단계: 요구사항 재검증
-            print(f"🔍 5단계: 요구사항 재검증")
+            # 5단계: 최종 검증 (판례 + 요구사항 통합)
+            print(f"🔍 5단계: 최종 검증 (판례 + 요구사항 통합)")
             state.verified_requirements = await self._verify_requirements(
                 state.requirements_analysis, state.precedents_analysis
             )
-            print(f"✅ 요구사항 재검증 완료")
+            print(f"✅ 최종 검증 완료")
             
             # 최종 결과 통합
             state.processing_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -158,17 +164,59 @@ class ProductRegistrationWorkflow:
         self, 
         hs_code: str, 
         product_name: str,
-        requirements_analysis: Dict[str, Any]
+        requirements_analysis: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """판례 분석 (기존 서비스 호출)"""
-        # TODO: 기존 판례 분석 서비스 호출
-        return {
-            "hs_code": hs_code,
-            "precedent_cases": [],
-            "violation_patterns": [],
-            "success_patterns": [],
-            "risk_assessment": "low"
-        }
+        """판례 분석 (최적화: 요구사항 분석보다 먼저 실행)"""
+        
+        print(f"🔍 판례 분석 시작 - HS코드: {hs_code}, 상품: {product_name}")
+        
+        try:
+            # 기존 판례 분석 서비스 호출 (precedents-analysis 모듈)
+            from app.routers.precedents_router import analyze_precedents
+            
+            request_data = {
+                "product_id": "temp_id",
+                "product_name": product_name,
+                "hs_code": hs_code,
+                "description": f"Analysis for {product_name}",
+                "origin_country": "Korea",
+                "price": 25.00,
+                "fob_price": 22.00
+            }
+            
+            # 판례 분석 실행
+            precedent_result = await analyze_precedents(request_data)
+            
+            print(f"✅ 판례 분석 완료 - {precedent_result.get('precedents_data', [])}개 판례 발견")
+            
+            return {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "precedent_cases": precedent_result.get("precedents_data", []),
+                "violation_patterns": precedent_result.get("failure_cases", []),
+                "success_patterns": precedent_result.get("success_cases", []),
+                "risk_assessment": "low" if precedent_result.get("confidence_score", 0) > 0.7 else "medium",
+                "confidence_score": precedent_result.get("confidence_score", 0),
+                "actionable_insights": precedent_result.get("actionable_insights", []),
+                "risk_factors": precedent_result.get("risk_factors", []),
+                "recommended_action": precedent_result.get("recommended_action", ""),
+                "analysis_timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            print(f"⚠️ 판례 분석 실패: {e}")
+            # 실패 시 기본값 반환
+            return {
+                "hs_code": hs_code,
+                "product_name": product_name,
+                "precedent_cases": [],
+                "violation_patterns": [],
+                "success_patterns": [],
+                "risk_assessment": "unknown",
+                "confidence_score": 0,
+                "error": str(e),
+                "analysis_timestamp": datetime.now().isoformat()
+            }
     
     async def _verify_requirements(
         self,
